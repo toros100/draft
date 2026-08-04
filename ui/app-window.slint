@@ -1,0 +1,261 @@
+import { Slider } from "std-widgets.slint";
+
+// TODO: wrapper type instead of raw int for ID?
+
+struct ScreenPos {
+    x: length,
+    y: length,
+}
+
+struct WorldPos {
+    x: float,
+    y: float,
+}
+
+struct PointData {
+    id: int,
+    pos: WorldPos,
+}
+
+struct LineData {
+    id: int,
+    from: WorldPos,
+    to: WorldPos,
+}
+
+struct CurveData {
+    id: int,
+    from: WorldPos,
+    to: WorldPos,
+    from_control: WorldPos,
+    to_control: WorldPos,
+}
+
+struct CurveControlData {
+    id: int,
+    parent: WorldPos,
+    pos: WorldPos,
+}
+
+
+component PointMarker inherits Rectangle {
+    in property <bool> hovered: false;
+    in property <length> size: 12px;
+    width: self.hovered ? 1.2 * self.size : self.size;
+    height: self.hovered ? 1.2 * self.size : self.size;
+    background: black;
+    border-width: 1px;
+    border-color: black;
+    border-radius: self.width / 2;
+}
+
+
+component NodeCanvas inherits Rectangle {
+    background: #FFFFFF;
+
+    callback pointer_event(PointerEventKind, WorldPos);
+
+    in property <[PointData]> points;
+    in property <[CurveData]> curves;
+    in property <[CurveControlData]> curve_controls;
+    in property <[LineData]> lines;
+
+    out property <float> scale: 1;
+
+    // need something better here
+    // like a HoverInfo struct containing more than just the id (int)
+    // e.g. whether the hovered thing is interactable (for cursor display etc)
+    in-out property <int> hover_id: -1;
+
+    out property <WorldPos> offset;
+    property <WorldPos> drag_start;
+
+    public function set_scale(s: float) {
+        let sc = screen_center();
+        let wc = screen_to_world(sc);
+        root.scale = s;
+        root.offset = {
+            x: (self.width / 2 / 1px) / root.scale - wc.x,
+            y: (self.height / 2 / 1px) / root.scale - wc.y,
+        }
+    }
+
+    pure function screen_center() -> ScreenPos {
+        {
+            x: root.width / 2,
+            y: root.height / 2,
+        }
+    }
+
+    pure function screen_center_world() -> WorldPos {
+        let w = root.width;
+        let h = root.height;
+        let world_center_x = (w / 2px) / root.scale + root.offset.x;
+        let world_center_y = (h / 2px) / root.scale + root.offset.y;
+        {
+            x: world_center_x,
+            y: world_center_y,
+        }
+    }
+
+    pure function screen_to_world(p: ScreenPos) -> WorldPos {
+        {
+            x: ((p.x / 1px) / root.scale - root.offset.x),
+            y: ((p.y / 1px) / root.scale - root.offset.y),
+        }
+    }
+
+    pure function world_to_screen(p: WorldPos) -> ScreenPos {
+        {
+            x: (p.x + root.offset.x) * root.scale * 1px,
+            y: (p.y + root.offset.y) * root.scale * 1px,
+        }
+    }
+
+    canvas_area := TouchArea {
+        pointer-event(event) => {
+            let po = root.screen_to_world({ x: self.mouse_x, y: self.mouse_y });
+            root.pointer_event(event.kind, po);
+
+            if (event.kind == PointerEventKind.down) {
+                root.drag_start = root.offset
+            }
+        }
+        moved => {
+            if root.hover_id == -1 {
+                // only panning around "world" if no node is "held"
+                // should probably do something else for this, e.g. modifier or middle mouse click
+                root.offset.x = root.drag_start.x + ((self.mouse_x - self.pressed_x) / 1px) / root.scale;
+                root.offset.y = root.drag_start.y + ((self.mouse_y - self.pressed_y) / 1px) / root.scale;
+            }
+        }
+    }
+
+    for l in lines: Path {
+        viewbox-height: root.height / 1px;
+        viewbox-width: root.width / 1px;
+        MoveTo {
+            x: world_to_screen(l.from).x / 1px;
+            y: world_to_screen(l.from).y / 1px;
+        }
+
+        LineTo {
+            x: world_to_screen(l.to).x / 1px;
+            y: world_to_screen(l.to).y / 1px;
+        }
+
+        stroke: gray;
+        stroke-width: 1px;
+    }
+
+    for curve[i] in curves: Path {
+        viewbox-width: root.width / 1px;
+        viewbox-height: root.height / 1px;
+
+        MoveTo {
+            x: world_to_screen(curve.from).x / 1px;
+            y: world_to_screen(curve.from).y / 1px;
+        }
+
+        CubicTo {
+            control-1-x: world_to_screen(curve.from_control).x / 1px;
+            control-1-y: world_to_screen(curve.from_control).y / 1px;
+            control-2-x: world_to_screen(curve.to_control).x / 1px;
+            control-2-y: world_to_screen(curve.to_control).y / 1px;
+            x: world_to_screen(curve.to).x / 1px;
+            y: world_to_screen(curve.to).y / 1px;
+        }
+
+        stroke: black;
+        stroke-width: 2px;
+    }
+
+    for c in curve_controls: Path {
+        viewbox-width: self.width / 1px;
+        viewbox-height: self.height / 1px;
+        MoveTo {
+            x: world_to_screen(c.parent).x / 1px;
+            y: world_to_screen(c.parent).y / 1px;
+        }
+
+        LineTo {
+            x: world_to_screen(c.pos).x / 1px;
+            y: world_to_screen(c.pos).y / 1px;
+        }
+
+        stroke: gray;
+        stroke-width: 1px;
+    }
+
+    for c in curve_controls: PointMarker {
+        size: 10px;
+        background: #CC0000;
+        x: world_to_screen(c.pos).x - self.width / 2;
+        y: world_to_screen(c.pos).y - self.height / 2;
+        hovered: root.hover_id == c.id ? true : false;
+    }
+
+    for p in points: PointMarker {
+        hovered: root.hover_id == p.id ? true : false;
+        x: world_to_screen(p.pos).x - self.width / 2;
+        y: world_to_screen(p.pos).y - self.width / 2;
+    }
+}
+
+
+export component MainWindow inherits Window {
+    callback pointer_event <=> canvas.pointer_event;
+
+    in property <[CurveData]> curves <=> canvas.curves;
+    in property <[CurveControlData]> curve_controls <=> canvas.curve_controls;
+    in property <[PointData]> points <=> canvas.points;
+    in property <[LineData]> lines <=> canvas.lines;
+    in-out property <int> hover_id <=> canvas.hover_id;
+    property <float> scale_val: 1;
+
+    preferred-width: 1200px;
+    preferred-height: 800px;
+
+    pure function fmt_float(f: float) -> float {
+        (f * 100).round() / 100
+    }
+
+    changed scale_val => {
+        canvas.set_scale(scale_val)
+    }
+
+    VerticalLayout {
+        canvas := NodeCanvas {
+            clip: true;
+        }
+
+        Rectangle {
+            HorizontalLayout {
+                alignment: start;
+                height: 40px;
+                padding: 8px;
+                spacing: 8px;
+                Slider {
+                    preferred-width: 100px;
+                    minimum: 0.25;
+                    maximum: 10;
+                    value <=> scale_val;
+                }
+
+                Text {
+                    text: "scale: \{fmt_float(scale_val)}";
+                }
+
+                Text {
+                    text: "top left (\{fmt_float(canvas.offset.x)}, \{fmt_float(canvas.offset.y)})";
+                }
+
+                Text {
+                    text: "hover \{root.hover_id}";
+                }
+
+                Rectangle { }
+            }
+        }
+    }
+}

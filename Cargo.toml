@@ -1,0 +1,15 @@
+[package]
+name = "draft"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+slint = "1.17.1"
+thiserror = "2"
+
+[build-dependencies]
+slint-build = "1.17.1"
+
+[profile.release]
+codegen-units = 1
+lto = true
