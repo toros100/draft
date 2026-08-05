@@ -2,29 +2,24 @@
 
 use std::ops::{Add, Mul, Sub};
 
+pub fn point2(x: f64, y: f64) -> Point2 {
+    Point2 { x, y }
+}
+
+pub fn vec2(x: f64, y: f64) -> Vec2 {
+    Vec2 { x, y }
+}
+
+pub fn polar(dist: f64, angle: f64) -> Polar {
+    Polar { dist, angle }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Point2 {
     pub x: f64,
     pub y: f64,
 }
 
-impl From<crate::slint_generatedMainWindow::WorldPos> for Point2 {
-    fn from(value: crate::slint_generatedMainWindow::WorldPos) -> Self {
-        Self {
-            x: value.x as f64,
-            y: value.y as f64,
-        }
-    }
-}
-
-impl From<Point2> for crate::slint_generatedMainWindow::WorldPos {
-    fn from(value: Point2) -> Self {
-        Self {
-            x: value.x as f32,
-            y: value.y as f32,
-        }
-    }
-}
 
 impl Add for Point2 {
     type Output = Point2;
@@ -65,6 +60,9 @@ pub struct Polar {
 }
 
 impl Polar {
+    pub fn new(dist: f64, angle: f64) -> Self {
+        Self { dist, angle }
+    }
     pub fn to_vec(self) -> Vec2 {
         let x = self.dist * self.angle.cos();
         let y = self.dist * self.angle.sin();

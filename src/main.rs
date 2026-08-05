@@ -5,27 +5,32 @@ use std::rc::Rc;
 
 use slint::{Model, ModelRc, language::PointerEventKind};
 
-use crate::graph::ObjectId;
+use crate::construction::object::ObjectId;
 
+use draft::construction;
 use draft::geom;
-use draft::graph;
 use draft::model;
 
 fn main() -> Result<(), slint::PlatformError> {
     let main_window = draft::MainWindow::new()?;
 
+    debug_assert!(
+        Option::<ObjectId>::from(main_window.global::<draft::Id>().get_NONE()).is_none(),
+        "none sentinel mismatch"
+    );
+
     let am = Rc::new(model::ObjectModel::default());
 
     {
         let mut a = am.arena_mut();
-        let p1 = a.add_point(geom::Point2::new(200., 200.));
-        let p2 = a.add_point(geom::Point2::new(400., 200.));
+        let p1 = a.add_point(geom::point2(200., 200.));
+        let p2 = a.add_point(geom::point2(400., 200.));
         let p3 = a.add_curve(p1, p2);
 
         let p4 = a.add_relative_point(
             p2,
-            graph::ExpressionObj::Length(100.),
-            graph::ExpressionObj::Angle(PI / 2.),
+            construction::expression::ExpressionObj::Length(100.),
+            construction::expression::ExpressionObj::Angle(PI / 2.),
         );
 
         let p5 = a.add_point_midway(p1, p4);
@@ -45,17 +50,13 @@ fn main() -> Result<(), slint::PlatformError> {
             PointerEventKind::Up | PointerEventKind::Cancel => ps.up(),
             PointerEventKind::Down => ps.down(p.into()),
             PointerEventKind::Move if ps.is_up() => {
-                let pos = geom::Point2::from(p);
+                let pos = p.into();
                 let res = am.arena_mut().hit_scan(pos, 12.);
 
-                ps.obj(res.map(|id| (id, pos)));
-                // if let Some(i) = res {
-                //     println!("hovering {:?}", i)
-                // };
-                let v: i32 = res.map_or(-1, |i| i.into());
-                w.unwrap().set_hover_id(v);
+                ps.obj(res);
+                w.unwrap().set_hover_id(res.into());
             }
-            PointerEventKind::Move if let Some((a, drag_start)) = ps.dragging() => {
+            PointerEventKind::Move if let Some(a) = ps.dragging() => {
                 let p = geom::Point2::from(p);
                 // TODO: need a way to distinguish object kind
                 am.arena_mut().drag_to(a, p);
@@ -93,6 +94,8 @@ enum Pointer {
 }
 
 /// i hate this, not cool, not nice
+/// need better tracking of state, especially for "tool usage"
+/// e.g. adding a line (selecting two points)
 #[derive(Default, Clone)]
 struct PointerState {
     inner: Rc<RefCell<PointerStateInner>>,
@@ -100,7 +103,7 @@ struct PointerState {
 
 #[derive(Default)]
 struct PointerStateInner {
-    obj: Option<(ObjectId, geom::Point2)>,
+    obj: Option<ObjectId>,
     drag_start: Option<geom::Point2>,
     state: Pointer,
 }
@@ -110,12 +113,12 @@ impl PointerState {
         matches!(self.inner.borrow().state, Pointer::Up)
     }
 
-    fn dragging(&self) -> Option<(ObjectId, geom::Point2)> {
+    fn dragging(&self) -> Option<ObjectId> {
         let b = self.inner.borrow();
         b.obj
     }
 
-    fn obj(&mut self, opt: Option<(ObjectId, geom::Point2)>) {
+    fn obj(&mut self, opt: Option<ObjectId>) {
         self.inner.borrow_mut().obj = opt;
     }
 

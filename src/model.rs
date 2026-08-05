@@ -1,10 +1,11 @@
-use crate::graph::Value;
+use crate::construction::value::Value;
 use crate::slint_generatedMainWindow;
 use slint::{FilterModel, MapModel, Model, ModelNotify};
 use std::cell::RefMut;
 use std::rc::Rc;
 
-use crate::graph::{Object, ObjectArena, ObjectId};
+use crate::construction::ObjectArena;
+use crate::construction::object::{Object, ObjectId};
 
 use std::cell::RefCell;
 
@@ -86,8 +87,8 @@ pub fn points_model(
             slint_generatedMainWindow::PointData {
                 id: row.id.into(),
                 pos: slint_generatedMainWindow::WorldPos {
-                    x: calculated_pos.x as f32,
-                    y: calculated_pos.y as f32,
+                    x: calculated_pos.pos.x as f32,
+                    y: calculated_pos.pos.y as f32,
                 },
             }
         }
