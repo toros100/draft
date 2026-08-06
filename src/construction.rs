@@ -46,6 +46,13 @@ impl ObjectArena {
         self.cache[idx].as_ref()
     }
 
+    pub fn get_value_for<A: ArenaObject>(&self, id: A::Id) -> Option<&A::Val> {
+        let idx = *self.raw_id_to_idx.get(&id.into_raw())?;
+        self.cache[idx]
+            .as_ref()
+            .map(|v| A::Val::try_project(v).expect("value type should match id type"))
+    }
+
     fn push_object<A>(&mut self, o: A) -> A::Id
     where
         A: ArenaObject,
@@ -294,5 +301,35 @@ impl<'a> EvalCtx for PrefixCtx<'a> {
                 .as_ref()
                 .ok_or(EvalError::UnresolvedDependency)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geom;
+    use approx::assert_relative_eq;
+
+    #[test]
+    fn pythagoras() {
+        let mut a = ObjectArena::default();
+
+        let p = a.add_root(geom::point2(0., 0.));
+        let q = a.add_relative_point(p, expression::length(234.), expression::angle(0.));
+        let r = a.add_relative_point(p, expression::length(98.), expression::angle(PI / 2.));
+
+        let exp = ExpressionObj::from(expression::dist_between(q, r));
+
+        let e = a.push_object(exp);
+
+        a.evaluate_all();
+
+        let dist = a
+            .get_value_for::<ExpressionObj>(e)
+            .expect("should be present");
+
+        let d = dist.try_as_length().expect("should be length variant");
+
+        assert_relative_eq!(d, (234f64.powi(2) + 98f64.powi(2)).sqrt());
     }
 }
