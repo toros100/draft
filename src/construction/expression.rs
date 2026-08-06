@@ -5,26 +5,12 @@
 // i did it like this because i anticipate writing a parser for expressions
 
 use crate::construction::eval::{Eval, EvalCtx, EvalError};
-use crate::construction::object::ObjectId;
-use crate::construction::value::PointVal;
+use crate::construction::object::{CurveId, ObjectId, PointId};
+use crate::construction::value::{CurveVal, PointVal};
+use crate::geom;
 use std::ops::Add;
 use std::ops::Mul;
 use thiserror::Error;
-
-// want to also have expression for curve length
-// but i also want points on curves to produce sub-curves like in seamly
-// and then i want to be able to also measure these, and not just the "first-class" curve
-//
-// i.e.: curve from a to b
-// point c placed on curve at 100mm from start (or by intersecting curve and line?)
-// -> implicit curve from a to c
-//
-// will also need this making pattern pieces by contour/path
-// points dont accidentally end up on curves i guess, they are all special
-// point variants that could know about their curve
-// so a path could be "collapsed" with that?
-// path (a, curve_a_b, c)
-// c is ON curve_a_b, contour detects this?
 
 #[derive(Error, Debug)]
 pub enum ExpressionError {
@@ -39,10 +25,13 @@ pub enum ExpressionObj {
     Length(f64),
     Angle(f64),
     Scalar(f64),
-    LineAngle(ObjectId, ObjectId),
-    Dist(ObjectId, ObjectId),
+    LineAngle(PointId, PointId),
+    Dist(PointId, PointId),
+    CurveLength(CurveId),
     // could use ObjectId and put subexpressions into the arena instead of Box<ExpressionObj> for recursion
     // i guess that would be better for peak performance, could deduplicate expressions too
+    // (would be good if for example n expressions contain CurveLength(id) with the same id,
+    // currently this would calculate the curve length n times)
     Mul(Box<ExpressionObj>, Box<ExpressionObj>),
     Add(Box<ExpressionObj>, Box<ExpressionObj>),
     // TODO:
@@ -56,6 +45,20 @@ pub enum ExpressionObj {
 impl ExpressionObj {
     pub fn type_check(&self) -> Result<(), ExpressionError> {
         todo!()
+    }
+
+    pub fn push_dependencies(&self, dep: &mut Vec<ObjectId>) {
+        match self {
+            ExpressionObj::Mul(a, b) | ExpressionObj::Add(a, b) => {
+                a.push_dependencies(dep);
+                b.push_dependencies(dep);
+            }
+            ExpressionObj::Dist(a, b) | ExpressionObj::LineAngle(a, b) => {
+                dep.extend::<[ObjectId; _]>([(*a).into(), (*b).into()])
+            }
+            ExpressionObj::CurveLength(c) => dep.push((*c).into()),
+            ExpressionObj::Length(_) | ExpressionObj::Scalar(_) | ExpressionObj::Angle(_) => {}
+        }
     }
 }
 
@@ -150,6 +153,11 @@ impl Eval for ExpressionObj {
                 let q = ctx.try_get_as::<&PointVal>(b)?;
 
                 Ok(ExpressionVal::Angle(q.pos.angle(p.pos)))
+            }
+            ExpressionObj::CurveLength(a) => {
+                let c = ctx.try_get_as::<&CurveVal>(a)?;
+                let l = geom::cubic_bezier_length(c.from, c.control_1, c.control_2, c.to);
+                Ok(ExpressionVal::Length(l))
             }
         }
     }

@@ -1,3 +1,4 @@
+use draft::construction::object::ObjectId;
 use slint::ComponentHandle;
 use std::cell::RefCell;
 use std::f64::consts::PI;
@@ -5,7 +6,7 @@ use std::rc::Rc;
 
 use slint::{Model, ModelRc, language::PointerEventKind};
 
-use crate::construction::object::ObjectId;
+use crate::construction::expression::ExpressionObj;
 
 use draft::construction;
 use draft::geom;
@@ -14,29 +15,37 @@ use draft::model;
 fn main() -> Result<(), slint::PlatformError> {
     let main_window = draft::MainWindow::new()?;
 
-    debug_assert!(
-        Option::<ObjectId>::from(main_window.global::<draft::Id>().get_NONE()).is_none(),
+    debug_assert_eq!(
+        main_window.global::<draft::Id>().get_NONE(),
+        draft::slint_conv::ID_NONE,
         "none sentinel mismatch"
     );
 
     let am = Rc::new(model::ObjectModel::default());
 
+    #[allow(unused)]
     {
         let mut a = am.arena_mut();
-        let p1 = a.add_point(geom::point2(200., 200.));
-        let p2 = a.add_point(geom::point2(400., 200.));
+        let p1 = a.add_root(geom::point2(200., 200.));
+        let p2 = a.add_root(geom::point2(400., 200.));
         let p3 = a.add_curve(p1, p2);
+        let dist = ExpressionObj::Mul(
+            ExpressionObj::Scalar(0.5).into(),
+            ExpressionObj::CurveLength(p3).into(),
+        );
 
-        let p4 = a.add_relative_point(
+        let p4 = a.add_point_on_curve(p3, dist);
+
+        let p5 = a.add_relative_point(
             p2,
             construction::expression::ExpressionObj::Length(100.),
             construction::expression::ExpressionObj::Angle(PI / 2.),
         );
 
-        let p5 = a.add_point_midway(p1, p4);
-        a.add_line(p1, p4);
+        let p6 = a.add_point_midway(p1, p5);
+        a.add_line(p1, p6);
 
-        a.calculate_all();
+        a.evaluate_all();
     }
 
     let ps = PointerState::default();
@@ -63,7 +72,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
                 // NOTE: just doing a full refresh on any change, should to partial refresh using
                 // dirty flag and cache later
-                am.arena_mut().calculate_all();
+                am.arena_mut().evaluate_all();
                 am.reset();
             }
             _ => {}
@@ -72,17 +81,19 @@ fn main() -> Result<(), slint::PlatformError> {
 
     am.reset();
 
-    let point_model = model::points_model(am.clone());
+    let point_model = model::filter_map(am.clone());
     println!("num points: {}", point_model.row_count());
-    let line_model = model::lines_model(am.clone());
+    let line_model = model::filter_map(am.clone());
     println!("num lines: {}", line_model.row_count());
-    let curve_model = model::curves_model(am.clone());
+    let curve_model = model::filter_map(am.clone());
     println!("num curves: {}", curve_model.row_count());
-    let curve_controls_mnodel = model::curve_controls_model(am.clone());
+    let curve_controls_model = model::filter_map(am.clone());
+
     main_window.set_points(ModelRc::new(point_model));
     main_window.set_lines(ModelRc::new(line_model));
     main_window.set_curves(ModelRc::new(curve_model));
-    main_window.set_curve_controls(ModelRc::new(curve_controls_mnodel));
+    main_window.set_curve_controls(ModelRc::new(curve_controls_model));
+
     main_window.run()
 }
 

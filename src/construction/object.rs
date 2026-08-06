@@ -1,31 +1,35 @@
 use crate::construction::eval::{Eval, EvalCtx, EvalError};
 use crate::construction::expression::{ExpressionObj, ExpressionVal};
 use crate::construction::value::*;
-use crate::geom::{Point2, Polar};
+use crate::geom::{self, Point2, Polar};
 
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
-pub struct ObjectId(usize);
+mod id;
+pub use id::*;
 
-// impl From<ObjectId> for i32 {
-//     fn from(value: ObjectId) -> Self {
-//         debug_assert!(value.0 <= i32::MAX as usize);
-//         value.0 as i32
-//     }
-// }
-//
-// impl From<usize> for ObjectId {
-//     fn from(value: usize) -> Self {
-//         Self(value)
-//     }
-// }
+pub trait ArenaObject: Into<Object> + Eval<Output = Self::Val> {
+    type Id: Id;
+    type Val: TryProject<Value>;
+}
 
-impl ObjectId {
-    pub fn from_raw(val: usize) -> Self {
-        ObjectId(val)
-    }
-    pub fn into_raw(self) -> usize {
-        self.0
-    }
+impl ArenaObject for PointObj {
+    type Id = PointId;
+    type Val = PointVal;
+}
+impl ArenaObject for LineObj {
+    type Id = LineId;
+    type Val = LineVal;
+}
+impl ArenaObject for CurveControlObj {
+    type Id = CurveControlId;
+    type Val = CurveControlVal;
+}
+impl ArenaObject for CurveObj {
+    type Id = CurveId;
+    type Val = CurveVal;
+}
+impl ArenaObject for ExpressionObj {
+    type Id = ExpressionId;
+    type Val = ExpressionVal;
 }
 
 #[derive(Clone, Debug)]
@@ -43,49 +47,98 @@ pub enum Object {
     // functionally similar to Point::DistAngle, but i did not want make it a "first-class point",
     // because i do not want stuff like curves or other points to connect to these synthetic control
     // points.
+    // this is kind of a "leaf" point, opposite to PointObj::Root:
+    // may depend on other points, but no other point may depend on it?
+    // might still want to allow its measurements (dist/angle) to be used in expressions?
     CurveControl(CurveControlObj),
 
     Expression(ExpressionObj),
 }
 
+impl PointObj {
+    fn push_dependencies(&self, dep: &mut Vec<ObjectId>) {
+        match self {
+            PointObj::OnLine { from, to, dist } => {
+                dep.extend::<[ObjectId; _]>([(*from).into(), (*to).into(), (*dist).into()])
+            }
+            PointObj::DistAngle {
+                parent,
+                dist,
+                angle,
+            } => dep.extend::<[ObjectId; _]>([parent.into(), dist.into(), angle.into()]),
+            PointObj::OnCurve { curve, dist } => {
+                dep.extend::<[ObjectId; _]>([curve.into(), dist.into()])
+            }
+            // writing this case out explicitly rather than using a wildcard so it will break when i
+            // add variants to this enum rather than produce garbage
+            PointObj::Root { .. } => {}
+        }
+    }
+}
+
+impl Object {
+    pub fn push_dependencies(&self, dep: &mut Vec<ObjectId>) {
+        match self {
+            Object::Line(l) => dep.extend::<[ObjectId; _]>([l.to.into(), l.from.into()]),
+            Object::Point(p) => p.push_dependencies(dep),
+            Object::Curve(c) => dep.extend::<[ObjectId; _]>([
+                c.from.into(),
+                c.to.into(),
+                c.control_1.into(),
+                c.control_2.into(),
+            ]),
+            Object::CurveControl(c) => dep.push(c.parent.into()),
+            Object::Expression(e) => e.push_dependencies(dep),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum PointObj {
     // point with absolute position
-    Absolute {
+    Root {
         pos: Point2,
     },
+
     // point at distance and angle from another point
     DistAngle {
-        parent: ObjectId, // must refer to Object::Point in arena
-        dist: ObjectId,   // must refer to Object::Expression
-        angle: ObjectId,  // same
+        parent: PointId,     // must refer to Object::Point in arena
+        dist: ExpressionId,  // must refer to Object::Expression
+        angle: ExpressionId, // same
     },
+
     // point on line between two points
     // deliberately not referring to Object::Line, which are "drawn" lines
     OnLine {
-        from: ObjectId, // must refer to Object::Point
-        to: ObjectId,   // ...
-        dist: ObjectId,
+        from: PointId, // must refer to Object::Point
+        to: PointId,   // ...
+        dist: ExpressionId,
+    },
+
+    // point on a curve
+    OnCurve {
+        curve: CurveId,
+        dist: ExpressionId,
     },
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct LineObj {
-    pub from: ObjectId,
-    pub to: ObjectId,
+    pub from: PointId,
+    pub to: PointId,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct CurveObj {
-    pub from: ObjectId,
-    pub to: ObjectId,
-    pub control_1: ObjectId,
-    pub control_2: ObjectId,
+    pub from: PointId,
+    pub to: PointId,
+    pub control_1: CurveControlId,
+    pub control_2: CurveControlId,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct CurveControlObj {
-    pub parent: ObjectId,
+    pub parent: PointId,
     pub off: Polar,
 }
 
@@ -93,7 +146,7 @@ impl Eval for PointObj {
     type Output = PointVal;
     fn eval(&self, ctx: &impl EvalCtx) -> Result<Self::Output, EvalError> {
         match self {
-            PointObj::Absolute { pos: p } => Ok(PointVal { pos: *p }),
+            PointObj::Root { pos: p } => Ok(PointVal { pos: *p }),
             PointObj::DistAngle {
                 parent,
                 dist,
@@ -124,6 +177,19 @@ impl Eval for PointObj {
 
                 Ok(PointVal {
                     pos: from_pos.pos + v,
+                })
+            }
+            PointObj::OnCurve { curve, dist } => {
+                let curve = ctx.try_get_as::<&CurveVal>(curve)?;
+                let dist = ctx.try_get_as::<&ExpressionVal>(dist)?.try_as_length()?;
+                Ok(PointVal {
+                    pos: geom::point_on_cubic_bezier(
+                        curve.from,
+                        curve.control_1,
+                        curve.control_2,
+                        curve.to,
+                        dist,
+                    ),
                 })
             }
         }

@@ -1,20 +1,64 @@
+use crate::construction::object::ArenaObject;
+use crate::construction::object::CurveControlObj;
+use crate::construction::object::CurveObj;
+use crate::construction::object::LineObj;
 use crate::construction::object::ObjectId;
+use crate::construction::object::PointObj;
 use crate::geom::Point2;
+use crate::model::SlintData;
 
 pub const ID_NONE: crate::slint_generatedMainWindow::OptionObjId =
     crate::slint_generatedMainWindow::OptionObjId { raw: -1 };
 
-impl From<crate::slint_generatedMainWindow::OptionObjId> for Option<ObjectId> {
-    fn from(value: crate::slint_generatedMainWindow::OptionObjId) -> Self {
-        match value.raw {
-            v if v == ID_NONE.raw => None,
-            v if v >= 0 => Some(ObjectId::from_raw(v as usize)),
-            _ => {
-                if cfg!(debug_assertions) {
-                    panic!("unexpected raw id value")
-                }
-                None
-            }
+impl SlintData<PointObj> for crate::slint_generatedMainWindow::PointData {
+    fn from_value(
+        id: <PointObj as ArenaObject>::Id,
+        value: &<PointObj as ArenaObject>::Val,
+    ) -> Self {
+        let id_erased: ObjectId = id.into();
+        Self {
+            id: id_erased.into(),
+            pos: value.pos.into(),
+        }
+    }
+}
+impl SlintData<LineObj> for crate::slint_generatedMainWindow::LineData {
+    fn from_value(id: <LineObj as ArenaObject>::Id, value: &<LineObj as ArenaObject>::Val) -> Self {
+        let id_erased: ObjectId = id.into();
+        Self {
+            id: id_erased.into(),
+            from: value.from.into(),
+            to: value.to.into(),
+        }
+    }
+}
+
+impl SlintData<CurveControlObj> for crate::slint_generatedMainWindow::CurveControlData {
+    fn from_value(
+        id: <CurveControlObj as ArenaObject>::Id,
+        value: &<CurveControlObj as ArenaObject>::Val,
+    ) -> Self {
+        let id_erased: ObjectId = id.into();
+        Self {
+            id: id_erased.into(),
+            parent: value.parent.into(),
+            pos: value.pos.into(),
+        }
+    }
+}
+
+impl SlintData<CurveObj> for crate::slint_generatedMainWindow::CurveData {
+    fn from_value(
+        id: <CurveObj as ArenaObject>::Id,
+        value: &<CurveObj as ArenaObject>::Val,
+    ) -> Self {
+        let id_erased: ObjectId = id.into();
+        Self {
+            id: id_erased.into(),
+            from: value.from.into(),
+            from_control: value.control_1.into(),
+            to_control: value.control_2.into(),
+            to: value.to.into(),
         }
     }
 }
@@ -29,13 +73,6 @@ impl From<Option<ObjectId>> for crate::slint_generatedMainWindow::OptionObjId {
             }
             None => ID_NONE,
         }
-    }
-}
-
-impl From<crate::slint_generatedMainWindow::ObjId> for ObjectId {
-    fn from(value: crate::slint_generatedMainWindow::ObjId) -> Self {
-        debug_assert!(value.raw >= 0);
-        Self::from_raw(value.raw as usize)
     }
 }
 

@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use crate::construction::eval::EvalError;
 use crate::construction::expression::ExpressionVal;
 use crate::geom::Point2;
@@ -10,6 +12,60 @@ pub enum Value {
     Curve(CurveVal),
     CurveControl(CurveControlVal),
     Expression(ExpressionVal),
+}
+
+pub trait TryProject<From> {
+    type Error: Debug;
+    fn try_project(val: &From) -> Result<&Self, Self::Error>;
+}
+
+impl TryProject<Value> for PointVal {
+    type Error = EvalError;
+    fn try_project(val: &Value) -> Result<&Self, EvalError> {
+        match val {
+            Value::Point(v) => Ok(v),
+            _ => Err(EvalError::UnexpectedType),
+        }
+    }
+}
+impl TryProject<Value> for LineVal {
+    type Error = EvalError;
+    fn try_project(val: &Value) -> Result<&Self, EvalError> {
+        match val {
+            Value::Line(v) => Ok(v),
+            _ => Err(EvalError::UnexpectedType),
+        }
+    }
+}
+
+impl TryProject<Value> for CurveVal {
+    type Error = EvalError;
+    fn try_project(val: &Value) -> Result<&Self, EvalError> {
+        match val {
+            Value::Curve(v) => Ok(v),
+            _ => Err(EvalError::UnexpectedType),
+        }
+    }
+}
+
+impl TryProject<Value> for CurveControlVal {
+    type Error = EvalError;
+    fn try_project(val: &Value) -> Result<&Self, EvalError> {
+        match val {
+            Value::CurveControl(v) => Ok(v),
+            _ => Err(EvalError::UnexpectedType),
+        }
+    }
+}
+
+impl TryProject<Value> for ExpressionVal {
+    type Error = EvalError;
+    fn try_project(val: &Value) -> Result<&Self, EvalError> {
+        match val {
+            Value::Expression(v) => Ok(v),
+            _ => Err(EvalError::UnexpectedType),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
