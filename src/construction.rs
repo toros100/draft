@@ -3,6 +3,8 @@ pub mod expression;
 pub mod object;
 pub mod value;
 
+use crate::construction::expression::AngleExpression;
+use crate::construction::expression::LengthExpression;
 use crate::construction::object::*;
 use crate::construction::value::*;
 use crate::geom::*;
@@ -81,6 +83,7 @@ impl ObjectArena {
     // not using TouchArea in slint, because we will need to detect interaction with curves in the
     // future
     // obviously a lot of room to improve here algorithmically
+    // HACK:
     pub fn hit_scan(&self, cursor_pos: Point2, tolerance: f64) -> Option<ObjectId> {
         fn dist_to(val: &Value, to: Point2) -> f64 {
             match val {
@@ -144,11 +147,11 @@ impl ObjectArena {
     pub fn add_relative_point(
         &mut self,
         parent: PointId,
-        dist: ExpressionObj,
-        angle: ExpressionObj,
+        dist: LengthExpression,
+        angle: AngleExpression,
     ) -> PointId {
-        let dist = self.push_object(dist);
-        let angle = self.push_object(angle);
+        let dist = self.push_object(ExpressionObj::from(dist));
+        let angle = self.push_object(ExpressionObj::from(angle));
 
         let p = PointObj::DistAngle {
             parent,
@@ -171,31 +174,26 @@ impl ObjectArena {
         self.push_object(o)
     }
 
-    pub fn add_point_on_curve(&mut self, curve: CurveId, dist: ExpressionObj) -> PointId {
-        let dist = self.push_object(dist);
+    pub fn add_point_on_curve(&mut self, curve: CurveId, dist: LengthExpression) -> PointId {
+        let dist = self.push_object(ExpressionObj::from(dist));
         self.push_object(PointObj::OnCurve { curve, dist })
     }
 
     pub fn add_point_midway(&mut self, from: PointId, to: PointId) -> PointId {
         // NOTE: could be a primitive instead
-        let exp = ExpressionObj::Mul(
-            ExpressionObj::Scalar(0.5).into(),
-            ExpressionObj::Dist(from, to).into(),
-        );
-        self.add_point_on_line(from, to, exp)
+        let dist = expression::scalar(0.5) * expression::dist_between(from, to);
+        self.add_point_on_line(from, to, dist)
     }
 
     pub fn add_point_perpendicular(
         &mut self,
         from: PointId,
         to: PointId,
-        dist: ExpressionObj,
+        dist: LengthExpression,
     ) -> PointId {
         // NOTE: could be a primitive instead
-        let angle = ExpressionObj::Add(
-            ExpressionObj::Angle(PI / 2.).into(),
-            ExpressionObj::LineAngle(to, from).into(),
-        );
+
+        let angle = expression::angle(PI / 2.) + expression::line_angle(from, to);
         self.add_relative_point(from, dist, angle)
     }
 
@@ -230,9 +228,9 @@ impl ObjectArena {
         &mut self,
         from: PointId,
         to: PointId,
-        dist: ExpressionObj,
+        dist: LengthExpression,
     ) -> PointId {
-        let dist = self.push_object(dist);
+        let dist = self.push_object(ExpressionObj::from(dist));
         self.push_object(PointObj::OnLine { from, to, dist })
     }
 

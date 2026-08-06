@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use slint::{Model, ModelRc, language::PointerEventKind};
 
-use crate::construction::expression::ExpressionObj;
+use crate::construction::expression;
 
 use draft::construction;
 use draft::geom;
@@ -29,19 +29,8 @@ fn main() -> Result<(), slint::PlatformError> {
         let p1 = a.add_root(geom::point2(200., 200.));
         let p2 = a.add_root(geom::point2(400., 200.));
         let p3 = a.add_curve(p1, p2);
-        let dist = ExpressionObj::Mul(
-            ExpressionObj::Scalar(0.5).into(),
-            ExpressionObj::CurveLength(p3).into(),
-        );
-
-        let p4 = a.add_point_on_curve(p3, dist);
-
-        let p5 = a.add_relative_point(
-            p2,
-            construction::expression::ExpressionObj::Length(100.),
-            construction::expression::ExpressionObj::Angle(PI / 2.),
-        );
-
+        let p4 = a.add_point_on_curve(p3, 0.5 * expression::curve_length(p3));
+        let p5 = a.add_relative_point(p2, expression::length(100.), expression::angle(PI / 2.));
         let p6 = a.add_point_midway(p1, p5);
         a.add_line(p1, p6);
 

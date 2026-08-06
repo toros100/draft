@@ -3,6 +3,10 @@
 // but this one holds both object and value for expressions
 //
 // i did it like this because i anticipate writing a parser for expressions
+//
+
+mod typed;
+pub use typed::*;
 
 use crate::construction::eval::{Eval, EvalCtx, EvalError};
 use crate::construction::object::{CurveId, ObjectId, PointId};
@@ -35,8 +39,9 @@ pub enum ExpressionObj {
     Mul(Box<ExpressionObj>, Box<ExpressionObj>),
     Add(Box<ExpressionObj>, Box<ExpressionObj>),
     // TODO:
-    // division (at least for scalars)
-    // curve length including subcurves (oof)
+    // sub, div, unary negative
+    // unit variants of leaf expressions? e.g. instead of Length(f64), do something like Length(ConstLength)
+    // and ConstLength { Mm(f64), Cm(f64) } etc (rad/deg angles)
     // further functions? trig? min/max? exponential?
     // small DLS + parser for input
     // what does seamly have? i think it even has conditionals?
