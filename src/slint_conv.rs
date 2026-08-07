@@ -55,10 +55,10 @@ impl SlintData<CurveObj> for crate::slint_generatedMainWindow::CurveData {
         let id_erased: ObjectId = id.into();
         Self {
             id: id_erased.into(),
-            from: value.from.into(),
-            from_control: value.control_1.into(),
-            to_control: value.control_2.into(),
-            to: value.to.into(),
+            from: value.curve.p_0.into(),
+            from_control: value.curve.p_1.into(),
+            to_control: value.curve.p_2.into(),
+            to: value.curve.p_3.into(),
         }
     }
 }

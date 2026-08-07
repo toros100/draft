@@ -11,7 +11,6 @@ pub use typed::*;
 use crate::construction::eval::{Eval, EvalCtx, EvalError};
 use crate::construction::object::{CurveId, ObjectId, PointId};
 use crate::construction::value::{CurveVal, PointVal};
-use crate::geom;
 use std::ops::Add;
 use std::ops::Mul;
 use thiserror::Error;
@@ -161,8 +160,7 @@ impl Eval for ExpressionObj {
             }
             ExpressionObj::CurveLength(a) => {
                 let c = ctx.try_get_as::<&CurveVal>(a)?;
-                let l = geom::cubic_bezier_length(c.from, c.control_1, c.control_2, c.to);
-                Ok(ExpressionVal::Length(l))
+                Ok(ExpressionVal::Length(c.curve.approx_length()))
             }
         }
     }

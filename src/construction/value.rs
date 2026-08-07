@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use crate::construction::eval::EvalError;
 use crate::construction::expression::ExpressionVal;
-use crate::geom::Point2;
+use crate::geom::{CubicBezier, Point2};
 
 #[derive(Clone)]
 // not copy because i anticipate future non-copy variants
@@ -87,10 +87,7 @@ pub struct LineVal {
 
 #[derive(Clone, Copy)]
 pub struct CurveVal {
-    pub from: Point2,
-    pub to: Point2,
-    pub control_1: Point2,
-    pub control_2: Point2,
+    pub curve: CubicBezier,
 }
 
 #[derive(Clone, Copy)]

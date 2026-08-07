@@ -87,6 +87,10 @@ component NodeCanvas inherits Rectangle {
     // e.g. whether the hovered thing is interactable (for cursor display etc)
     in-out property <OptionObjId> hover_id: Id.NONE;
 
+    function is_hovered(id: ObjId) -> bool {
+        Id.eq(root.hover_id, id)
+    }
+
     out property <WorldPos> offset;
     property <WorldPos> drag_start;
 
@@ -188,7 +192,7 @@ component NodeCanvas inherits Rectangle {
         }
 
         stroke: black;
-        stroke-width: 2px;
+        stroke-width: is_hovered(curve.id) ? 4px : 2px;
     }
 
     for c in curve_controls: Path {
@@ -213,11 +217,11 @@ component NodeCanvas inherits Rectangle {
         background: #CC0000;
         x: world_to_screen(c.pos).x - self.width / 2;
         y: world_to_screen(c.pos).y - self.height / 2;
-        hovered: Id.eq(root.hover_id, c.id) ? true : false;
+        hovered: is_hovered(c.id) ? true : false;
     }
 
     for p in points: PointMarker {
-        hovered: Id.eq(root.hover_id, p.id) ? true : false;
+        hovered: is_hovered(p.id) ? true : false;
         x: world_to_screen(p.pos).x - self.width / 2;
         y: world_to_screen(p.pos).y - self.width / 2;
     }
@@ -259,7 +263,7 @@ export component MainWindow inherits Window {
                 Slider {
                     preferred-width: 100px;
                     minimum: 0.25;
-                    maximum: 10;
+                    maximum: 50;
                     value <=> scale_val;
                 }
 

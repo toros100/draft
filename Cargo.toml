@@ -6,7 +6,8 @@ edition = "2024"
 [dependencies]
 slint = "1.17.1"
 thiserror = "2"
-approx = "0.5.1"
+approx =  "0.5.1"
+approx-derive = "0.2.8"
 
 [build-dependencies]
 slint-build = "1.17.1"

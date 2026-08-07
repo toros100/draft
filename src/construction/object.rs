@@ -78,6 +78,9 @@ impl PointObj {
 
 impl Object {
     pub fn push_dependencies(&self, dep: &mut Vec<ObjectId>) {
+        // this should probably be done with a method on the ArenaObject trait
+        // but i need to rethink the entire dependency tracking thing if/when i actually do smarter
+        // caching than full refresh on every change in the arena
         match self {
             Object::Line(l) => dep.extend::<[ObjectId; _]>([l.to.into(), l.from.into()]),
             Object::Point(p) => p.push_dependencies(dep),
@@ -183,13 +186,7 @@ impl Eval for PointObj {
                 let curve = ctx.try_get_as::<&CurveVal>(curve)?;
                 let dist = ctx.try_get_as::<&ExpressionVal>(dist)?.try_as_length()?;
                 Ok(PointVal {
-                    pos: geom::point_on_cubic_bezier(
-                        curve.from,
-                        curve.control_1,
-                        curve.control_2,
-                        curve.to,
-                        dist,
-                    ),
+                    pos: curve.curve.point_on(dist),
                 })
             }
         }
@@ -218,10 +215,7 @@ impl Eval for CurveObj {
         let control_2 = ctx.try_get_as::<&CurveControlVal>(self.control_2)?;
 
         Ok(CurveVal {
-            from: from.pos,
-            to: to.pos,
-            control_1: control_1.pos,
-            control_2: control_2.pos,
+            curve: geom::curve(from.pos, control_1.pos, control_2.pos, to.pos),
         })
     }
 }

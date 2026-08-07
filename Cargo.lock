@@ -245,6 +245,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "approx-derive"
+version = "0.2.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7d4712bcff4a775f6f3b89f44dd563bcd699e70c4d35dea56645f22d65ca465"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1102,6 +1114,7 @@ name = "draft"
 version = "0.1.0"
 dependencies = [
  "approx",
+ "approx-derive",
  "slint",
  "slint-build",
  "thiserror 2.0.19",

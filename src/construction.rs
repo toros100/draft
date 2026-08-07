@@ -91,30 +91,59 @@ impl ObjectArena {
     // future
     // obviously a lot of room to improve here algorithmically
     // HACK:
-    pub fn hit_scan(&self, cursor_pos: Point2, tolerance: f64) -> Option<ObjectId> {
-        fn dist_to(val: &Value, to: Point2) -> f64 {
+    pub fn hit_scan(&self, cursor_pos: Point2, limit: f64) -> Option<ObjectId> {
+        fn dist_to(val: &Value, target: Point2, limit: f64) -> Option<f64> {
             match val {
-                Value::Point(p) => p.pos.dist(to),
-                Value::CurveControl(c) => c.pos.dist(to),
-                // HACK:: returning MAX for unimplemented cases for now
-                _ => f64::MAX,
+                Value::Point(p) => {
+                    let d = p.pos.dist(target);
+                    if d >= limit { None } else { Some(d) }
+                }
+                Value::CurveControl(c) => {
+                    let d = c.pos.dist(target);
+                    if d >= limit { None } else { Some(d) }
+                }
+                Value::Curve(c) => c.curve.dist(target, limit),
+                _ => None,
             }
         }
         // TODO: need to handle curves, the return type will probably need to be more complex
         // especially for curves. e.g. if its a curve that was hit, we will need to know where on
         // the curve that was and not just the curves id
-        let mut dist = f64::MAX;
-        let mut id = None;
+        let mut dist_point = f64::MAX;
+        let mut closest_point = None;
+
+        let mut dist_curve = f64::MAX;
+        let mut closest_curve = None;
+
+        // HACK: disgusting
         for (ev, (_, i)) in self.cache.iter().zip(self.v.iter()) {
             if let Some(e) = ev {
-                let d = dist_to(e, cursor_pos);
-                if d <= tolerance && d < dist {
-                    dist = d;
-                    id = Some(*i)
+                let d = dist_to(e, cursor_pos, limit);
+                if let Some(d) = d {
+                    match e {
+                        Value::Curve(_) => {
+                            if d < dist_curve {
+                                dist_curve = d;
+                                closest_curve = Some(*i)
+                            }
+                        }
+                        _ => {
+                            if d < dist_point {
+                                dist_point = d;
+                                closest_point = Some(*i)
+                            }
+                        }
+                    }
                 }
             }
         }
-        id
+
+        // HACK: (workaround to make points on curves hoverable)
+        if closest_point.is_some() {
+            closest_point
+        } else {
+            closest_curve
+        }
     }
 
     pub fn drag_to(&mut self, id: ObjectId, target: Point2) {
@@ -151,7 +180,7 @@ impl ObjectArena {
         self.push_object(PointObj::Root { pos })
     }
 
-    pub fn add_relative_point(
+    pub fn add_point_relative(
         &mut self,
         parent: PointId,
         dist: LengthExpression,
@@ -201,7 +230,7 @@ impl ObjectArena {
         // NOTE: could be a primitive instead
 
         let angle = expression::angle(PI / 2.) + expression::line_angle(from, to);
-        self.add_relative_point(from, dist, angle)
+        self.add_point_relative(from, dist, angle)
     }
 
     fn add_curve_control(&mut self, parent: PointId) -> CurveControlId {
@@ -315,8 +344,8 @@ mod tests {
         let mut a = ObjectArena::default();
 
         let p = a.add_root(geom::point2(0., 0.));
-        let q = a.add_relative_point(p, expression::length(234.), expression::angle(0.));
-        let r = a.add_relative_point(p, expression::length(98.), expression::angle(PI / 2.));
+        let q = a.add_point_relative(p, expression::length(234.), expression::angle(0.));
+        let r = a.add_point_relative(p, expression::length(98.), expression::angle(PI / 2.));
 
         let exp = ExpressionObj::from(expression::dist_between(q, r));
 
