@@ -1,15 +1,8 @@
-use draft::construction::object::ObjectId;
-use slint::ComponentHandle;
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use slint::{Model, ModelRc, language::PointerEventKind};
-
-use crate::construction::expression;
-
-use draft::construction;
-use draft::geom;
-use draft::model;
+use crate::construction::variants::expression;
+use draft::construction::{self, Object, ObjectId};
+use draft::{geom, model};
+use slint::{ComponentHandle, language::PointerEventKind};
+use std::{cell::RefCell, rc::Rc};
 
 fn main() -> Result<(), slint::PlatformError> {
     let main_window = draft::MainWindow::new()?;
@@ -20,21 +13,8 @@ fn main() -> Result<(), slint::PlatformError> {
         "none sentinel mismatch"
     );
 
-    let am = Rc::new(model::ObjectModel::default());
-
-    // #[allow(unused)]
-    // {
-    //     let mut a = am.arena_mut();
-    //     let p1 = a.add_root(geom::point2(200., 200.));
-    //     let p2 = a.add_root(geom::point2(400., 200.));
-    //     let p3 = a.add_curve(p1, p2);
-    //     let p4 = a.add_point_on_curve(p3, 0.5 * expression::curve_length(p3));
-    //     let p5 = a.add_relative_point(p2, expression::length(100.), expression::angle(PI / 2.));
-    //     let p6 = a.add_point_midway(p1, p5);
-    //     a.add_line(p1, p6);
-    //
-    //     a.evaluate_all();
-    // }
+    let a = model::ArenaModel::<Object>::default();
+    let am = Rc::new(a);
 
     #[allow(unused)]
     {
@@ -62,23 +42,6 @@ fn main() -> Result<(), slint::PlatformError> {
         a.evaluate_all();
     }
 
-    // {
-    //     let mut a = am.arena_mut();
-    //
-    //     let n = 10000usize;
-    //     let gap = 15f64;
-    //
-    //     let root = a.add_root(geom::point2(0., 0.));
-    //
-    //     let mut ps = Vec::with_capacity(n * n);
-    //
-    //     for j in 0..n {
-    //         let prev = if j == 0 { root } else { ps[j - 1] };
-    //         ps.push(a.add_relative_point(prev, expression::length(gap), expression::angle(0.)));
-    //     }
-    //     a.evaluate_all();
-    // }
-
     let ps = PointerState::default();
 
     main_window.on_pointer_event({
@@ -97,33 +60,24 @@ fn main() -> Result<(), slint::PlatformError> {
                 w.unwrap().set_hover_id(res.into());
             }
             PointerEventKind::Move if let Some(a) = ps.dragging() => {
-                let p = geom::Point2::from(p);
+                // HACK:
+                let p = geom::point2(p.x as f64, p.y as f64);
                 // TODO: need a way to distinguish object kind
                 am.arena_mut().drag_to(a, p);
 
                 // NOTE: just doing a full refresh on any change, should to partial refresh using
                 // dirty flag and cache later
                 am.arena_mut().evaluate_all();
-                am.reset();
+                am.notify_all();
             }
             _ => {}
         }
     });
 
-    am.reset();
-
-    let point_model = model::filter_map(am.clone());
-    println!("num points: {}", point_model.row_count());
-    let line_model = model::filter_map(am.clone());
-    println!("num lines: {}", line_model.row_count());
-    let curve_model = model::filter_map(am.clone());
-    println!("num curves: {}", curve_model.row_count());
-    let curve_controls_model = model::filter_map(am.clone());
-
-    main_window.set_points(ModelRc::new(point_model));
-    main_window.set_lines(ModelRc::new(line_model));
-    main_window.set_curves(ModelRc::new(curve_model));
-    main_window.set_curve_controls(ModelRc::new(curve_controls_model));
+    main_window.set_points(model::filter_map_model(am.clone()));
+    main_window.set_lines(model::filter_map_model(am.clone()));
+    main_window.set_curve_controls(model::filter_map_model(am.clone()));
+    main_window.set_curves(model::filter_map_model(am.clone()));
 
     main_window.run()
 }

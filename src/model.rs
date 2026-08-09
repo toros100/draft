@@ -1,56 +1,59 @@
-use crate::construction::value::{TryProject, Value};
-use slint::{FilterModel, MapModel, Model, ModelNotify};
-use std::cell::RefMut;
+use crate::arena::Arena;
+use crate::core::*;
+use crate::slint_conv::SlintData;
+use slint::{FilterModel, MapModel, Model, ModelNotify, ModelRc};
+use std::cell::{RefCell, RefMut};
+use std::hash::Hash;
 use std::rc::Rc;
 
-use crate::construction::ObjectArena;
-use crate::construction::object::{ArenaObject, ObjectId};
-
-use std::cell::RefCell;
-
-pub trait SlintData<A: ArenaObject>: 'static + Clone {
-    fn from_value(id: A::Id, value: &A::Val) -> Self;
-}
-
-#[derive(Default)]
-pub struct ObjectModel {
-    arena: RefCell<ObjectArena>,
+pub struct ArenaModel<S: SumObject> {
+    arena: RefCell<Arena<S>>,
     notify: ModelNotify,
 }
 
-impl ObjectModel {
-    pub fn reset(&self) {
-        self.notify.reset();
+impl<S: SumObject> Default for ArenaModel<S> {
+    fn default() -> Self {
+        Self {
+            arena: RefCell::new(Arena::default()),
+            notify: ModelNotify::default(),
+        }
     }
+}
 
-    pub fn arena_mut(&self) -> RefMut<'_, ObjectArena> {
+impl<S: SumObject> ArenaModel<S> {
+    pub fn arena_mut(&self) -> RefMut<'_, Arena<S>> {
         self.arena.borrow_mut()
     }
+
+    pub fn notify_all(&self) {
+        self.notify.reset();
+    }
 }
 
-pub struct Row {
-    id: ObjectId,
-    val: Value,
+pub struct Row<S: SumObject> {
+    id: S::Id,
+    val: S::Value,
 }
 
-impl Model for ObjectModel {
-    type Data = Row;
+impl<S: SumObject> Model for ArenaModel<S>
+where
+    S::Id: PartialEq + Eq + Hash,
+    S::Value: Clone,
+{
+    type Data = Row<S>;
     fn row_count(&self) -> usize {
         self.arena.borrow().len()
     }
-
     fn row_data(&self, row: usize) -> Option<Self::Data> {
-        let b = self.arena.borrow();
-        if row >= b.len() {
+        let ar = self.arena.borrow();
+        if row >= ar.len() {
             None
         } else {
-            let id = b.get_object(row).1;
-
-            // WARN: ugly, should obviously not just unwrap here
-            // at this point (for display), everything should be evaluated
-            // need to deal with the case where something is broken somehow
-            let val = b.get_value(row).unwrap().clone();
-            Some(Row { id, val })
+            let (a, _, c) = ar.get_by_index(row)?;
+            Some(Row {
+                id: a,
+                val: c.clone(),
+            })
         }
     }
 
@@ -59,16 +62,19 @@ impl Model for ObjectModel {
     }
 }
 
-pub fn filter_map<A, S>(om: Rc<ObjectModel>) -> impl slint::Model<Data = S>
+pub fn filter_map_model<S, V, D>(am: Rc<ArenaModel<S>>) -> ModelRc<D>
 where
-    A: ArenaObject,
-    S: SlintData<A>,
+    S: SumObject + 'static,
+    V: Variant<S>,
+    D: SlintData<V, S>,
+    S::Id: PartialEq + Eq + Hash,
+    S::Value: Clone,
 {
-    let filtered = FilterModel::new(om.clone(), |r| A::Val::try_project(&r.val).is_ok());
+    let filtered = FilterModel::new(am.clone(), |r| V::Id::project(&r.id).is_some());
 
-    MapModel::new(filtered, |r| {
-        let v = A::Val::try_project(&r.val).expect("value type should still match after filtering");
-        let id = A::Id::try_from(r.id).expect("id type should match value type");
-        S::from_value(id, v)
-    })
+    ModelRc::new(MapModel::new(filtered, |r| {
+        let v = r.val.case().unwrap();
+        let id = *r.id.case().unwrap();
+        D::from_id_and_value(id, v)
+    }))
 }

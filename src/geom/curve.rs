@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Default, Clone, Copy, Debug)]
 pub struct CubicBezier {
     pub p_0: Point2,
     pub p_1: Point2,

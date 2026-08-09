@@ -17,7 +17,7 @@ pub fn polar(dist: f64, angle: f64) -> Polar {
     Polar { dist, angle }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, approx_derive::RelativeEq)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, approx_derive::RelativeEq)]
 pub struct Point2 {
     pub x: f64,
     pub y: f64,

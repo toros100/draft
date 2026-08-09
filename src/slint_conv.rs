@@ -1,60 +1,60 @@
-use crate::construction::object::ArenaObject;
-use crate::construction::object::CurveControlObj;
-use crate::construction::object::CurveObj;
-use crate::construction::object::LineObj;
-use crate::construction::object::ObjectId;
-use crate::construction::object::PointObj;
+use crate::construction::{CurveControlObj, CurveObj, LineObj, Object, ObjectId, PointObj};
+use crate::core::*;
 use crate::geom::Point2;
-use crate::model::SlintData;
+use crate::{CurveControlData, CurveData, LineData, ObjId, PointData};
+
+pub trait SlintData<V: Variant<S>, S: SumObject>: 'static + Clone {
+    fn from_id_and_value(id: <V as Variant<S>>::Id, value: &<V as Variant<S>>::Val) -> Self;
+}
 
 pub const ID_NONE: crate::slint_generatedMainWindow::OptionObjId =
     crate::slint_generatedMainWindow::OptionObjId { raw: -1 };
 
-impl SlintData<PointObj> for crate::slint_generatedMainWindow::PointData {
-    fn from_value(
-        id: <PointObj as ArenaObject>::Id,
-        value: &<PointObj as ArenaObject>::Val,
+impl SlintData<PointObj, Object> for PointData {
+    fn from_id_and_value(
+        id: <PointObj as Variant<Object>>::Id,
+        value: &<PointObj as Variant<Object>>::Val,
     ) -> Self {
-        let id_erased: ObjectId = id.into();
-        Self {
-            id: id_erased.into(),
+        PointData {
+            id: <ObjId as From<ObjectId>>::from(id.into()),
             pos: value.pos.into(),
         }
     }
 }
-impl SlintData<LineObj> for crate::slint_generatedMainWindow::LineData {
-    fn from_value(id: <LineObj as ArenaObject>::Id, value: &<LineObj as ArenaObject>::Val) -> Self {
-        let id_erased: ObjectId = id.into();
+
+impl SlintData<LineObj, Object> for LineData {
+    fn from_id_and_value(
+        id: <LineObj as Variant<Object>>::Id,
+        value: &<LineObj as Variant<Object>>::Val,
+    ) -> Self {
         Self {
-            id: id_erased.into(),
+            id: <ObjId as From<ObjectId>>::from(id.into()),
             from: value.from.into(),
             to: value.to.into(),
         }
     }
 }
 
-impl SlintData<CurveControlObj> for crate::slint_generatedMainWindow::CurveControlData {
-    fn from_value(
-        id: <CurveControlObj as ArenaObject>::Id,
-        value: &<CurveControlObj as ArenaObject>::Val,
+impl SlintData<CurveControlObj, Object> for CurveControlData {
+    fn from_id_and_value(
+        id: <CurveControlObj as Variant<Object>>::Id,
+        value: &<CurveControlObj as Variant<Object>>::Val,
     ) -> Self {
-        let id_erased: ObjectId = id.into();
         Self {
-            id: id_erased.into(),
+            id: <ObjId as From<ObjectId>>::from(id.into()),
             parent: value.parent.into(),
             pos: value.pos.into(),
         }
     }
 }
 
-impl SlintData<CurveObj> for crate::slint_generatedMainWindow::CurveData {
-    fn from_value(
-        id: <CurveObj as ArenaObject>::Id,
-        value: &<CurveObj as ArenaObject>::Val,
+impl SlintData<CurveObj, Object> for CurveData {
+    fn from_id_and_value(
+        id: <CurveObj as Variant<Object>>::Id,
+        value: &<CurveObj as Variant<Object>>::Val,
     ) -> Self {
-        let id_erased: ObjectId = id.into();
         Self {
-            id: id_erased.into(),
+            id: <ObjId as From<ObjectId>>::from(id.into()),
             from: value.curve.p_0.into(),
             from_control: value.curve.p_1.into(),
             to_control: value.curve.p_2.into(),
@@ -67,7 +67,7 @@ impl From<Option<ObjectId>> for crate::slint_generatedMainWindow::OptionObjId {
     fn from(value: Option<ObjectId>) -> Self {
         match value {
             Some(i) => {
-                let raw = i.into_raw() as i32;
+                let raw = <ObjectId as Into<usize>>::into(i) as i32;
                 debug_assert!(raw >= 0);
                 crate::slint_generatedMainWindow::OptionObjId { raw }
             }
@@ -78,7 +78,7 @@ impl From<Option<ObjectId>> for crate::slint_generatedMainWindow::OptionObjId {
 
 impl From<ObjectId> for crate::slint_generatedMainWindow::ObjId {
     fn from(value: ObjectId) -> Self {
-        let raw = value.into_raw() as i32;
+        let raw = <ObjectId as Into<usize>>::into(value) as i32;
         debug_assert!(raw >= 0);
         Self { raw }
     }
