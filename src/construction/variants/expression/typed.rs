@@ -10,8 +10,13 @@ use super::*;
 
 // maybe accumulate dependencies while building?
 
+#[derive(Debug, Clone)]
 pub struct LengthExpression(ExpressionObj);
+
+#[derive(Debug, Clone)]
 pub struct AngleExpression(ExpressionObj);
+
+#[derive(Debug, Clone)]
 pub struct ScalarExpression(ExpressionObj);
 
 impl From<LengthExpression> for ExpressionObj {

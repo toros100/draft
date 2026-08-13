@@ -56,27 +56,29 @@ impl CubicBezier {
         .as_point()
     }
 
-    pub fn point_on(&self, dist_from_start: f64) -> Point2 {
+    pub fn point_on(&self, dist_from_start: f64) -> (f64, Point2) {
         // a lot of room to improve lol
 
         if dist_from_start <= 0. {
-            return self.p_0;
+            return (0., self.p_0);
         }
 
         let mut acc = 0f64;
         let mut p = self.at(0.);
-        for i in 1..BEZIER_STEPS {
+        let mut t_p = 0.;
+        for i in 0..BEZIER_STEPS {
             let t = (i as f64) / ((BEZIER_STEPS - 1) as f64);
             let next = self.at(t);
             let d = p.dist(next);
 
             if acc + d >= dist_from_start {
-                return p;
+                return (t_p, p);
             }
             acc += d;
             p = next;
+            t_p = t;
         }
-        p
+        (t_p, p)
     }
 
     // cf. de casteljau

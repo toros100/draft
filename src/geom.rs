@@ -2,6 +2,7 @@
 
 mod curve;
 pub use curve::*;
+use vello::kurbo;
 
 use std::ops::{Add, Mul, Sub};
 
@@ -119,6 +120,10 @@ impl Vec2 {
         }
     }
 
+    pub fn dot(self, other: Self) -> f64 {
+        self.x * other.x + self.y * other.y
+    }
+
     pub fn norm(self) -> f64 {
         (self.x * self.x + self.y * self.y).sqrt()
     }
@@ -189,5 +194,41 @@ impl Mul<Vec2> for f64 {
     type Output = Vec2;
     fn mul(self, rhs: Vec2) -> Self::Output {
         rhs.scale(self)
+    }
+}
+
+impl From<Point2> for kurbo::Point {
+    fn from(value: Point2) -> Self {
+        Self {
+            x: value.x,
+            y: value.y,
+        }
+    }
+}
+
+impl From<kurbo::Point> for Point2 {
+    fn from(value: kurbo::Point) -> Self {
+        Self {
+            x: value.x,
+            y: value.y,
+        }
+    }
+}
+
+impl From<Vec2> for kurbo::Vec2 {
+    fn from(value: Vec2) -> Self {
+        Self {
+            x: value.x,
+            y: value.y,
+        }
+    }
+}
+
+impl From<kurbo::Vec2> for Vec2 {
+    fn from(value: kurbo::Vec2) -> Self {
+        Self {
+            x: value.x,
+            y: value.y,
+        }
     }
 }

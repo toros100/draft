@@ -5,16 +5,22 @@ use crate::core::*;
 
 struct PrefixCtx<'a, S: SumObject> {
     id_to_idx: &'a HashMap<S::Id, usize>,
+    objs: &'a [(S::Id, S)],
     vals: &'a [Option<S::Value>],
 }
 
-impl<'a, S: SumObject> EvalCtx<S> for PrefixCtx<'a, S>
+impl<'a, S> EvalCtx<S> for PrefixCtx<'a, S>
 where
+    S: SumObject,
     S::Id: PartialEq + Eq + Hash,
 {
     fn get_cached(&self, id: <S as SumObject>::Id) -> Option<&<S as SumObject>::Value> {
         let idx = *self.id_to_idx.get(&id)?;
         self.vals[idx].as_ref()
+    }
+    fn get_obj(&self, id: <S as SumObject>::Id) -> Option<&S> {
+        let idx = *self.id_to_idx.get(&id)?;
+        Some(&self.objs[idx].1)
     }
 }
 
@@ -77,17 +83,21 @@ where
 
     pub fn evaluate_all(&mut self) {
         for i in 0..self.objs.len() {
-            let (prev, rest) = self.vals.split_at_mut(i);
+            let (val_pref, val_rest) = self.vals.split_at_mut(i);
+
+            let (obj_pref, obj_rest) = self.objs.split_at_mut(i);
 
             // having a concrete implementation of EvalCtx baked into this generic impl is a bit ugly
 
             let ctx = PrefixCtx {
-                vals: prev,
+                vals: val_pref,
                 id_to_idx: &self.id_to_idx,
+                objs: obj_pref,
             };
 
-            let v = &mut rest[0];
-            self.objs[i].1.eval_dispatch(v, &ctx).unwrap();
+            let v = &mut val_rest[0];
+            let o = &obj_rest[0].1;
+            o.eval_dispatch(v, &ctx).unwrap();
         }
     }
 

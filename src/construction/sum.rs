@@ -10,6 +10,7 @@ pub enum ObjectId {
     Curve(CurveId),
     CurveControl(CurveControlId),
     Expression(ExpressionId),
+    Path(PathId),
 }
 
 impl From<ObjectId> for usize {
@@ -20,6 +21,7 @@ impl From<ObjectId> for usize {
             ObjectId::CurveControl(inner) => inner.0,
             ObjectId::Curve(inner) => inner.0,
             ObjectId::Expression(inner) => inner.0,
+            ObjectId::Path(inner) => inner.0,
         }
     }
 }
@@ -45,6 +47,8 @@ pub enum Object {
     CurveControl(CurveControlObj),
 
     Expression(ExpressionObj),
+
+    Path(PathObj),
 }
 
 #[derive(Debug, Clone)]
@@ -55,6 +59,7 @@ pub enum Value {
     Curve(CurveVal),
     CurveControl(CurveControlVal),
     Expression(ExpressionVal),
+    Path(PathVal),
 }
 
 #[derive(Error, Debug)]
@@ -84,6 +89,7 @@ impl SumObject for Object {
             Object::CurveControl(inner) => inner.eval(project_or_default(dst), ctx),
             Object::Curve(inner) => inner.eval(project_or_default(dst), ctx),
             Object::Expression(inner) => inner.eval(project_or_default(dst), ctx),
+            Object::Path(inner) => inner.eval(project_or_default(dst), ctx),
         }
     }
 }

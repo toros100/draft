@@ -4,13 +4,21 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-slint = "1.17.1"
+slint = {version = "~1.17", default-features = false, features = [
+"compat-1-2",
+"unstable-wgpu-29",
+"renderer-femtovg-wgpu",
+"backend-winit-wayland" # NOTE: minimal features for (hopefully) better compile times
+]}
+
+vello = "0.9"
+static_assertions = "1"
 thiserror = "2"
 approx =  "0.5.1"
 approx-derive = "0.2.8"
 
 [build-dependencies]
-slint-build = "1.17.1"
+slint-build = "1.17"
 
 [profile.release]
 codegen-units = 1

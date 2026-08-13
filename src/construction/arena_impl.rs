@@ -4,6 +4,10 @@ use crate::core::*;
 use crate::{arena::*, geom};
 
 impl Arena<Object> {
+    pub fn iter_vals(&self) -> impl Iterator<Item = &Option<Value>> {
+        self.vals.iter()
+    }
+
     pub fn drag_to(&mut self, id: ObjectId, target: geom::Point2) {
         // need to decide whether i want this to do nothing or explode if anything fails
         // none of the operations should ever fail, unless something else is very wrong
@@ -109,7 +113,11 @@ impl Arena<Object> {
             dist,
             angle,
         };
-        self.try_push_obj(p)
+        let p_id = self.try_push_obj(p);
+
+        self.add_line(parent, p_id);
+
+        p_id
     }
 
     pub fn add_curve(&mut self, from: PointId, to: PointId) -> CurveId {

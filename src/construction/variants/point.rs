@@ -145,7 +145,7 @@ impl Variant<Object> for PointObj {
                     .get_cached_as::<ExpressionObj>(*dist)
                     .ok_or(EvalError::UnknownDependency)?
                     .try_as_length()?;
-                dst.pos = curve.curve.point_on(dist);
+                dst.pos = curve.curve.point_on(dist).1;
             }
         }
         Ok(())

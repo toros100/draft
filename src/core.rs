@@ -6,11 +6,6 @@ pub trait Case<T>: Into<T> {
 }
 
 pub trait CaseExt: Sized {
-    fn case<V: Case<Self>>(&self) -> Option<&V>;
-    fn case_mut<V: Case<Self>>(&mut self) -> Option<&mut V>;
-}
-
-impl<T> CaseExt for T {
     fn case<V: Case<Self>>(&self) -> Option<&V> {
         V::project(self)
     }
@@ -18,6 +13,8 @@ impl<T> CaseExt for T {
         V::project_mut(self)
     }
 }
+
+impl<T> CaseExt for T {}
 
 pub trait SumObject: Sized {
     type Id: Copy;
@@ -33,6 +30,10 @@ pub trait SumObject: Sized {
 pub trait EvalCtx<S: SumObject> {
     // TODO: would be better to return error
     fn get_cached(&self, id: S::Id) -> Option<&S::Value>;
+    fn get_obj(&self, id: S::Id) -> Option<&S>;
+}
+
+pub trait EvalCtxExt<S: SumObject>: EvalCtx<S> {
     fn get_cached_as<'a, V>(&'a self, id: V::Id) -> Option<&'a V::Val>
     where
         V: Variant<S>,
@@ -40,6 +41,22 @@ pub trait EvalCtx<S: SumObject> {
     {
         self.get_cached(id.into())?.case()
     }
+
+    #[allow(unused)]
+    fn get_obj_as<'a, V>(&'a self, id: V::Id) -> Option<&'a V>
+    where
+        V: Variant<S>,
+        S: 'a,
+    {
+        self.get_obj(id.into())?.case()
+    }
+}
+
+impl<S, T> EvalCtxExt<S> for T
+where
+    S: SumObject,
+    T: EvalCtx<S>,
+{
 }
 
 pub trait Variant<S: SumObject>: Case<S> {
