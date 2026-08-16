@@ -19,7 +19,7 @@ impl From<PointId> for ObjectId {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum PointObj {
     // point with absolute position
     Root {
@@ -28,9 +28,9 @@ pub enum PointObj {
 
     // point at distance and angle from another point
     DistAngle {
-        parent: PointId,     // must refer to Object::Point in arena
-        dist: ExpressionId,  // must refer to Object::Expression
-        angle: ExpressionId, // same
+        parent: PointId,        // must refer to Object::Point in arena
+        dist: LengthExpression, // must refer to Object::Expression
+        angle: AngleExpression, // same
     },
 
     // point on line between two points
@@ -38,13 +38,13 @@ pub enum PointObj {
     OnLine {
         from: PointId, // must refer to Object::Point
         to: PointId,   // ...
-        dist: ExpressionId,
+        dist: LengthExpression,
     },
 
     // point on a curve
     OnCurve {
         curve: CurveId,
-        dist: ExpressionId,
+        dist: LengthExpression,
     },
 }
 
@@ -72,15 +72,21 @@ impl Variant<Object> for PointObj {
     fn dependencies(&self, dst: &mut impl Extend<<Object as SumObject>::Id>) {
         match self {
             PointObj::OnLine { from, to, dist } => {
-                dst.extend::<[ObjectId; _]>([(*from).into(), (*to).into(), (*dist).into()])
+                dist.inner().dependencies(dst);
+                dst.extend::<[ObjectId; _]>([(*from).into(), (*to).into()])
             }
             PointObj::DistAngle {
                 parent,
                 dist,
                 angle,
-            } => dst.extend::<[ObjectId; _]>([(*parent).into(), (*dist).into(), (*angle).into()]),
+            } => {
+                dst.extend::<[ObjectId; _]>([(*parent).into()]);
+                dist.inner().dependencies(dst);
+                angle.inner().dependencies(dst);
+            }
             PointObj::OnCurve { curve, dist } => {
-                dst.extend::<[ObjectId; _]>([(*curve).into(), (*dist).into()])
+                dist.inner().dependencies(dst);
+                dst.extend::<[ObjectId; _]>([(*curve).into()])
             }
             // writing this case out explicitly rather than using a wildcard so it will break when i
             // add variants to this enum rather than produce garbage
@@ -95,15 +101,8 @@ impl Variant<Object> for PointObj {
                 dist,
                 angle,
             } => {
-                let d = ctx
-                    .get_cached_as::<ExpressionObj>(*dist)
-                    .ok_or(EvalError::UnknownDependency)?
-                    .try_as_length()?;
-
-                let a = ctx
-                    .get_cached_as::<ExpressionObj>(*angle)
-                    .ok_or(EvalError::UnknownDependency)?
-                    .try_as_angle()?;
+                let d = dist.inner().eval_expr(ctx)?.try_as_length()?;
+                let a = angle.inner().eval_expr(ctx)?.try_as_angle()?;
 
                 let off = Polar::new(d, a);
                 let p = ctx
@@ -119,10 +118,8 @@ impl Variant<Object> for PointObj {
                 let to_pos = ctx
                     .get_cached_as::<PointObj>(*to)
                     .ok_or(EvalError::UnknownDependency)?;
-                let dist = ctx
-                    .get_cached_as::<ExpressionObj>(*dist)
-                    .ok_or(EvalError::UnknownDependency)?
-                    .try_as_length()?;
+
+                let dist = dist.inner().eval_expr(ctx)?.try_as_length()?;
 
                 let v = from_pos
                     .pos
@@ -141,10 +138,7 @@ impl Variant<Object> for PointObj {
                 let curve = ctx
                     .get_cached_as::<CurveObj>(*curve)
                     .ok_or(EvalError::UnknownDependency)?;
-                let dist = ctx
-                    .get_cached_as::<ExpressionObj>(*dist)
-                    .ok_or(EvalError::UnknownDependency)?
-                    .try_as_length()?;
+                let dist = dist.inner().eval_expr(ctx)?.try_as_length()?;
                 dst.pos = curve.curve.point_on(dist).1;
             }
         }

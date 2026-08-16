@@ -4,6 +4,7 @@ pub mod expression;
 mod line;
 mod path;
 mod point;
+mod variable;
 
 use super::sum::*;
 pub use curve::*;
@@ -12,3 +13,4 @@ pub use expression::*;
 pub use line::*;
 pub use path::*;
 pub use point::*;
+pub use variable::*;

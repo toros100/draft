@@ -25,6 +25,7 @@ pub trait SumObject: Sized {
         dst: &mut Option<Self::Value>,
         ctx: &impl EvalCtx<Self>,
     ) -> Result<(), Self::EvalError>;
+    fn dependencies_dispatch(&self, dst: &mut impl Extend<Self::Id>);
 }
 
 pub trait EvalCtx<S: SumObject> {
@@ -60,7 +61,7 @@ where
 }
 
 pub trait Variant<S: SumObject>: Case<S> {
-    type Id: Case<S::Id> + From<usize> + Copy;
+    type Id: Into<S::Id> + From<usize> + Copy;
     type Val: Case<S::Value>;
     type EvalError: Debug;
     fn dependencies(&self, dst: &mut impl Extend<S::Id>);

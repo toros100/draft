@@ -1,26 +1,46 @@
-import { Slider, Button } from "std-widgets.slint";
+import { Slider, Button, VerticalBox, LineEdit } from "std-widgets.slint";
 
-// Option<ObjectId> in rust
-export struct OptionObjId {raw: int}
-
-// ObjectId in rust
-export struct ObjId {raw: int}
-
-export global Id {
-    out property <OptionObjId> NONE: { raw: -1 };
-
-    public pure function eq(a: OptionObjId, b: ObjId) -> bool {
-        a.raw == b.raw
-    }
-
-    public pure function fmt(a: OptionObjId) -> string {
-        if a == NONE {
-            "none"
-        } else {
-            "\{a.raw}"
-        }
-    }
+// need to disambiguate all the specific type variants, because they will require
+// a different edit popup
+export enum ObjectKind {
+    PointFree,
+    PointDistAngle,
+    PointOnLine,
+    PointOnCurve,
+    Line,
+    Curve,
+    CurveControl,
 }
+
+export struct TaggedObjectId {
+    raw: int,
+    kind: ObjectKind,
+}
+
+
+export struct ObjectData {
+    length: string,
+    angle: string,
+}
+
+export struct ObjectDataResponse {
+    ok: bool,
+    err: string,
+    id: TaggedObjectId,
+    data: ObjectData,
+}
+
+export struct ObjectDataUpdate {
+    id: TaggedObjectId,
+    data: ObjectData,
+}
+
+export struct HoverInfo {
+    is_some: bool,
+    can_delete: bool,
+    id: TaggedObjectId,
+}
+
 
 export struct ToolData {
     name: string,
@@ -58,15 +78,228 @@ component CustomButton inherits Rectangle {
 }
 
 
-export component MainWindow inherits Window {
-    callback pointer_event(kind: PointerEventKind, button: PointerEventButton, x: float, y: float);
-    callback tool_choice(idx: int);
 
-    in-out property <OptionObjId> hover_id: Id.NONE;
+component HSpacer {
+    in property <color> color: #5c5c5c;
+    in property <length> line_width: 1px;
+    in property <length> pad_top_bottom: 4px;
+    height: line_width + 2 * pad_top_bottom;
+    width: 100%;
+
+    HorizontalLayout {
+        alignment: center;
+        padding-top: root.pad_top_bottom;
+        padding-bottom: root.pad_top_bottom;
+
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            background: root.color;
+        }
+    }
+}
+
+component PopupMenu inherits Rectangle {
+    border-width: 1px;
+    border-color: black;
+    border-radius: 6px;
+    height: 100%;
+    width: 100%;
+    background: #272727;
+    drop-shadow-color: #00000055;
+    drop-shadow-blur: 6px;
+    clip: true;
+    VerticalLayout {
+        padding: 4px;
+        spacing: 0px;
+        height: 100%;
+        width: 100%;
+        cross-axis-alignment: center;
+        @children
+    }
+}
+
+component PopupMenuButton {
+    callback clicked();
+    in property <string> label;
+    in property <bool> enabled: true;
+    in property <color> text_color_enabled: #EEEEEE;
+    in property <color> text_color_disabled: #888888;
+    in property <color> background: #00000000;
+    in property <color> background_hovered: #454545;
+
+    in property <length> padding_lr: 6px;
+    in property <length> padding_tb: 2px;
+
+    width: 100%;
+
+    VerticalLayout {
+        padding: 0px;
+        Rectangle {
+            background: t.has-hover && enabled ? root.background_hovered : root.background;
+            border-radius: 2px;
+            t := TouchArea {
+                enabled: root.enabled;
+                mouse-cursor: root.enabled ? MouseCursor.pointer : MouseCursor.default;
+                VerticalLayout {
+                    height: 100%;
+                    width: 100%;
+                    alignment: center;
+                    padding-left: root.padding_lr;
+                    padding-right: root.padding_lr;
+                    padding-top: root.padding_tb;
+                    padding-bottom: root.padding_tb;
+
+                    Text {
+                        vertical-alignment: center;
+                        horizontal-alignment: left;
+                        color: root.enabled ? root.text_color_enabled : root.text_color_disabled;
+                        text: root.label;
+                    }
+                }
+
+                clicked => { root.clicked() }
+            }
+        }
+    }
+}
+
+component FormField {
+    in property <string> label;
+    in-out property <string> content;
+    public function reset() {
+        li.text = content;
+        li.clear-focus();
+    }
+    public function get() -> string {
+        li.text
+    }
+    forward-focus: li;
+    HorizontalLayout {
+        spacing: 16px;
+        Text {
+            width: 80px;
+            text: label;
+            vertical-alignment: center;
+            horizontal-alignment: right;
+        }
+
+        FocusScope {
+            KeyBinding {
+                keys: @keys(Escape);
+                activated => { li.clear-focus() }
+            }
+
+            li := LineEdit {
+                width: 100%;
+                text: content;
+            }
+        }
+    }
+}
+
+
+export struct PointDistAngleData {
+    dist: string,
+    angle: string,
+}
+
+export global DataCallbacks {
+    callback submit_data(update: ObjectDataUpdate);
+}
+
+component EditDistAngle {
+    callback submit(data: ObjectData);
+    in property <ObjectData> data;
+    property <ObjectData> data_copy: data;
+    in property <TaggedObjectId> point_id;
+
+    foc := FocusScope {
+
+        VerticalLayout {
+            spacing: 8px;
+
+            Text {
+                text: "Properties of Point \{point_id.raw}";
+                font-size: 14pt;
+                font-weight: FontWeight.semi-bold;
+            }
+
+            Rectangle {
+                height: 4px;
+            }
+
+            dist_field := FormField {
+                label: "Distance:";
+                content: data.length;
+            }
+
+            ang_field := FormField {
+                label: "Angle:";
+                content: data.angle;
+            }
+
+            Rectangle {
+                height: 8px;
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: end;
+                Button {
+                    text: "Reset";
+                    clicked => {
+                        dist_field.reset();
+                        ang_field.reset();
+                    }
+                }
+
+                Button {
+                    text: "Accept";
+                    clicked => {
+                        debug(dist_field.get() + ang_field.get());
+                        root.data_copy.length = dist_field.get();
+                        root.data_copy.angle = ang_field.get();
+                        root.submit(root.data_copy);
+                        dist_field.clear-focus();
+                        ang_field.clear-focus();
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component MainWindow inherits Window {
+    callback pointer_event(kind: PointerEventKind, button: PointerEventButton, x: float, y: float, modifiers: KeyboardModifiers);
+    callback tool_choice(idx: int);
+    callback delete_object(id: TaggedObjectId);
+
+    callback get_object_data(id: TaggedObjectId);
+
+    pure function fmt_hover_info(h: HoverInfo) -> string {
+        let id = h.is_some ? "\{h.id.raw}" : "none";
+        let del = h.can-delete ? "(can delete)" : "(can not delete)";
+        id + " " + del
+    }
+
+    // forward-focus: scope;
+    in-out property <TaggedObjectId> hover_id;
+
+    // INFO: it is important that hover_info.is_some == false for the "zero value" of the type HoverInfo
+    in property <HoverInfo> hover_info;
+
+    in property <ObjectDataResponse> selected_data;
+    in property <HoverInfo> selected_info;
+
     property <float> scale_val: 1;
 
     in property <[ToolData]> tools;
     in-out property <int> selected_tool: 0;
+
+    in-out property <bool> rcm_visible: false;
+    in-out property <length> rcm_x;
+    in-out property <length> rcm_y;
 
     in-out property <image> canvas;
     out property <length> canvas_width: canvas.width;
@@ -79,6 +312,12 @@ export component MainWindow inherits Window {
 
     pure function fmt_float(f: float) -> float {
         (f * 100).round() / 100
+    }
+
+    function show_rcm(id: TaggedObjectId, mouse_x: length, mouse_y: length) {
+        root.rcm_x = mouse_x;
+        root.rcm_y = mouse_y;
+        rcm.show()
     }
 
     VerticalLayout {
@@ -95,24 +334,100 @@ export component MainWindow inherits Window {
                     root.tool_choice(i);
                 }
             }
+
             Rectangle { }
         }
 
-        Rectangle {
-            canvas := Image {
-                image-fit: fill;
-                width: 100%;
-                height: 100%;
+        HorizontalLayout {
 
-                source: root.canvas;
-                touch := TouchArea {
+            Rectangle {
+                rcm := PopupWindow {
+                    close-policy: close-on-click-outside;
 
-                    mouse-cursor: root.panning ? MouseCursor.grabbing : MouseCursor.default;
+                    // NOTE: when using a border radius and enabling content clipping on the rectangle,
+                    // the contents appear blurred, which was fixed by rounding the positioning
+                    // not sure when exactly this blurring can happen, but this is probably a good trick to remember
 
-                    pointer-event(event) => {
-                        root.pointer_event(event.kind, event.button, self.mouse_x / 1px, self.mouse_y / 1px)
+                    x: round(root.rcm_x / 1px) * 1px;
+                    y: round(root.rcm_y / 1px) * 1px;
+
+                    FocusScope {
+                        KeyBinding {
+                            keys: @keys(Escape);
+                            activated => { rcm.close() }
+                        }
+                    }
+
+                    PopupMenu {
+                        PopupMenuButton {
+                            label: "Edit";
+                        }
+
+                        PopupMenuButton {
+                            label: "Delete";
+                            enabled: root.hover_info.can-delete;
+                            clicked => {
+                                rcm.close();
+                                root.delete_object(root.hover_info.id);
+                            }
+                        }
+
+                        HSpacer { }
+
+                        PopupMenuButton {
+                            label: "Cancel";
+                            clicked => { rcm.close() }
+                        }
                     }
                 }
+
+                canvas := Image {
+                    image-fit: fill;
+                    width: 100%;
+                    height: 100%;
+
+                    source: root.canvas;
+                    touch := TouchArea {
+                        mouse-cursor: root.panning ? MouseCursor.grabbing : MouseCursor.default;
+
+                        pointer-event(event) => {
+                            root.pointer_event(event.kind, event.button, self.mouse_x / 1px, self.mouse_y / 1px, event.modifiers);
+                            if (event.kind == PointerEventKind.down && event.button == PointerEventButton.right) {
+                                if root.hover_info.is_some {
+                                    root.show_rcm(root.hover_info.id, self.mouse_x, self.mouse_y)
+                                }
+                            }
+                            ;
+                        }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                width: 300px;
+                alignment: start;
+                spacing: 8px;
+                padding: 8px;
+
+                HSpacer { }
+
+                if (root.selected_data.ok && root.selected_data.id.kind == ObjectKind.PointDistAngle): EditDistAngle {
+                    point_id: root.selected_data.id;
+                    data: root.selected_data.data;
+                    submit(data) => {
+                        debug("submitting for", self.point_id);
+                        DataCallbacks.submit_data({ id: self.point_id, data: data })
+                    }
+                }
+
+                if (!root.selected_data.ok): Rectangle {
+                    Text {
+                        text: "nothing selected";
+                        color: gray;
+                    }
+                }
+
+                HSpacer { }
             }
         }
 
@@ -134,7 +449,11 @@ export component MainWindow inherits Window {
                 }
 
                 Text {
-                    text: "hover?: \{Id.fmt(root.hover_id)}";
+                    text: "hover?: \{fmt_hover_info(root.hover_info)}";
+                }
+
+                Text {
+                    text: "selected?: \{fmt_hover_info(root.selected_info)}";
                 }
 
                 Rectangle { }

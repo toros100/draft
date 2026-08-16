@@ -60,20 +60,20 @@ impl Variant<Object> for CurveControlObj {
     }
 }
 
-impl Case<ObjectId> for CurveControlId {
-    fn project(s: &ObjectId) -> Option<&Self> {
-        match s {
-            ObjectId::CurveControl(inner) => Some(inner),
-            _ => None,
-        }
-    }
-    fn project_mut(s: &mut ObjectId) -> Option<&mut Self> {
-        match s {
-            ObjectId::CurveControl(inner) => Some(inner),
-            _ => None,
-        }
-    }
-}
+// impl Case<ObjectId> for CurveControlId {
+//     fn project(s: &ObjectId) -> Option<&Self> {
+//         match s {
+//             ObjectId::CurveControl(inner) => Some(inner),
+//             _ => None,
+//         }
+//     }
+//     fn project_mut(s: &mut ObjectId) -> Option<&mut Self> {
+//         match s {
+//             ObjectId::CurveControl(inner) => Some(inner),
+//             _ => None,
+//         }
+//     }
+// }
 
 impl Case<Object> for CurveControlObj {
     fn project(s: &Object) -> Option<&Self> {

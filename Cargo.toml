@@ -8,7 +8,8 @@ slint = {version = "~1.17", default-features = false, features = [
 "compat-1-2",
 "unstable-wgpu-29",
 "renderer-femtovg-wgpu",
-"backend-winit-wayland" # NOTE: minimal features for (hopefully) better compile times
+"backend-winit-wayland", # NOTE: minimal features for (hopefully) better compile times
+"live-preview"
 ]}
 
 vello = "0.9"

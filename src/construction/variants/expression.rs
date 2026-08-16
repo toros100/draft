@@ -1,4 +1,5 @@
 use super::*;
+use crate::arena::Arena;
 use crate::core::*;
 use std::ops::Add;
 use std::ops::Mul;
@@ -7,85 +8,98 @@ use thiserror::Error;
 mod typed;
 pub use typed::*;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct ExpressionId(pub(crate) usize);
+pub trait Stringify {
+    fn stringify(&self, arena: &Arena<Object>) -> String;
+}
 
-impl From<ExpressionId> for ObjectId {
-    fn from(value: ExpressionId) -> Self {
-        Self::Expression(value)
+pub trait Parse {
+    fn parse(input: impl AsRef<str>, arena: &Arena<Object>) -> Self;
+}
+
+// TODO: actual impl for Stringify/Parse
+// probably extract expression module to somewhere else
+impl Stringify for Expression {
+    fn stringify(&self, _: &Arena<Object>) -> String {
+        match self {
+            Expression::Length(l) => l.to_string(),
+            Expression::Angle(l) => l.to_string(),
+            _ => unimplemented!(),
+        }
     }
 }
 
-impl From<usize> for ExpressionId {
-    fn from(value: usize) -> Self {
-        Self(value)
+impl Parse for LengthExpression {
+    fn parse(input: impl AsRef<str>, _: &Arena<Object>) -> Self {
+        length(input.as_ref().parse().unwrap())
+    }
+}
+
+impl Parse for AngleExpression {
+    fn parse(input: impl AsRef<str>, _: &Arena<Object>) -> Self {
+        angle(input.as_ref().parse().unwrap())
     }
 }
 
 #[derive(Clone, Debug)]
-pub enum ExpressionObj {
+pub enum Expression {
     Length(f64),
     Angle(f64),
     Scalar(f64),
+    LengthVar(LengthVariableId),
+    AngleVar(AngleVariableId),
+    ScalarVar(ScalarVariableId),
     LineAngle(PointId, PointId),
     Dist(PointId, PointId),
     CurveLength(CurveId),
-    // could use ObjectId and put subexpressions into the arena instead of Box<ExpressionObj> for recursion
-    // i guess that would be better for peak performance, could deduplicate expressions too
-    // (would be good if for example n expressions contain CurveLength(id) with the same id,
-    // currently this would calculate the curve length n times)
-    Mul(Box<ExpressionObj>, Box<ExpressionObj>),
-    Add(Box<ExpressionObj>, Box<ExpressionObj>),
+    Mul(Box<Expression>, Box<Expression>),
+    Add(Box<Expression>, Box<Expression>),
     // TODO:
-    // sub, div, unary negative
-    // unit variants of leaf expressions? e.g. instead of Length(f64), do something like Length(ConstLength)
-    // and ConstLength { Mm(f64), Cm(f64) } etc (rad/deg angles)
-    // further functions? trig? min/max? exponential?
-    // small DLS + parser for input
-    // what does seamly have? i think it even has conditionals?
 }
 
-impl From<ExpressionObj> for Object {
-    fn from(value: ExpressionObj) -> Self {
-        Object::Expression(value)
-    }
-}
-
-impl ExpressionObj {
+impl Expression {
     pub fn type_check(&self) -> Result<(), ExpressionError> {
         todo!()
     }
 
-    pub fn walk_dependencies(&self, dst: &mut impl Extend<ObjectId>) {
+    pub fn dependencies(&self, dst: &mut impl Extend<ObjectId>) {
         match self {
-            ExpressionObj::Mul(a, b) | ExpressionObj::Add(a, b) => {
-                a.walk_dependencies(dst);
-                b.walk_dependencies(dst);
+            Expression::Mul(a, b) | Expression::Add(a, b) => {
+                a.dependencies(dst);
+                b.dependencies(dst);
             }
-            ExpressionObj::Dist(a, b) | ExpressionObj::LineAngle(a, b) => {
+            Expression::Dist(a, b) | Expression::LineAngle(a, b) => {
                 dst.extend::<[ObjectId; _]>([(*a).into(), (*b).into()])
             }
-            ExpressionObj::CurveLength(c) => dst.extend([(*c).into()]),
-            ExpressionObj::Length(_) | ExpressionObj::Scalar(_) | ExpressionObj::Angle(_) => {}
+            Expression::CurveLength(c) => dst.extend([(*c).into()]),
+            Expression::Length(_) | Expression::Scalar(_) | Expression::Angle(_) => {}
+            Expression::AngleVar(v) => {
+                dst.extend([v.inner().into()]);
+            }
+            Expression::LengthVar(v) => {
+                dst.extend([v.inner().into()]);
+            }
+            Expression::ScalarVar(v) => {
+                dst.extend([v.inner().into()]);
+            }
         }
     }
 
-    fn eval_expr(&self, ctx: &impl EvalCtx<Object>) -> Result<ExpressionVal, EvalError> {
+    pub fn eval_expr(&self, ctx: &impl EvalCtx<Object>) -> Result<ExpressionVal, EvalError> {
         match self {
-            ExpressionObj::Length(f) => Ok(ExpressionVal::Length(*f)),
-            ExpressionObj::Angle(f) => Ok(ExpressionVal::Angle(*f)),
-            ExpressionObj::Scalar(f) => Ok(ExpressionVal::Scalar(*f)),
-            ExpressionObj::Add(a, b) => {
+            Expression::Length(f) => Ok(ExpressionVal::Length(*f)),
+            Expression::Angle(f) => Ok(ExpressionVal::Angle(*f)),
+            Expression::Scalar(f) => Ok(ExpressionVal::Scalar(*f)),
+            Expression::Add(a, b) => {
                 let a = a.eval_expr(ctx)?;
                 let b = b.eval_expr(ctx)?;
                 Ok(a.try_add(b)?)
             }
-            ExpressionObj::Mul(a, b) => {
+            Expression::Mul(a, b) => {
                 let a = a.eval_expr(ctx)?;
                 let b = b.eval_expr(ctx)?;
                 Ok(a.try_mul(b)?)
             }
-            ExpressionObj::Dist(a, b) => {
+            Expression::Dist(a, b) => {
                 let p = ctx
                     .get_cached_as::<PointObj>(*a)
                     .ok_or(EvalError::UnexpectedType)?;
@@ -94,7 +108,7 @@ impl ExpressionObj {
                     .ok_or(EvalError::UnknownDependency)?;
                 Ok(ExpressionVal::Length(p.pos.dist(q.pos)))
             }
-            ExpressionObj::LineAngle(a, b) => {
+            Expression::LineAngle(a, b) => {
                 let p = ctx
                     .get_cached_as::<PointObj>(*a)
                     .ok_or(EvalError::UnknownDependency)?;
@@ -104,11 +118,35 @@ impl ExpressionObj {
 
                 Ok(ExpressionVal::Angle(q.pos.angle(p.pos)))
             }
-            ExpressionObj::CurveLength(a) => {
+            Expression::CurveLength(a) => {
                 let c = ctx
                     .get_cached_as::<CurveObj>(*a)
                     .ok_or(EvalError::UnknownDependency)?;
                 Ok(ExpressionVal::Length(c.curve.approx_length()))
+            }
+            Expression::AngleVar(v) => {
+                let c = ctx
+                    .get_cached_as::<VariableObj>(v.inner())
+                    .ok_or(EvalError::UnknownDependency)?
+                    .val
+                    .try_as_angle()?;
+                Ok(ExpressionVal::Angle(c))
+            }
+            Expression::LengthVar(v) => {
+                let c = ctx
+                    .get_cached_as::<VariableObj>(v.inner())
+                    .ok_or(EvalError::UnknownDependency)?
+                    .val
+                    .try_as_length()?;
+                Ok(ExpressionVal::Length(c))
+            }
+            Expression::ScalarVar(v) => {
+                let c = ctx
+                    .get_cached_as::<VariableObj>(v.inner())
+                    .ok_or(EvalError::UnknownDependency)?
+                    .val
+                    .try_as_scalar()?;
+                Ok(ExpressionVal::Scalar(c))
             }
         }
     }
@@ -133,12 +171,6 @@ pub enum ExpressionVal {
     Length(f64),
     Angle(f64),
     Scalar(f64),
-}
-
-impl From<ExpressionVal> for Value {
-    fn from(value: ExpressionVal) -> Self {
-        Self::Expression(value)
-    }
 }
 
 impl Default for ExpressionVal {
@@ -200,65 +232,6 @@ impl ExpressionVal {
                 Ok(ExpressionVal::Angle(a.mul(b)))
             }
             _ => Err(ExpressionError::UnexpectedOperandType),
-        }
-    }
-}
-
-impl Variant<Object> for ExpressionObj {
-    type EvalError = EvalError;
-    type Id = ExpressionId;
-    type Val = ExpressionVal;
-    fn dependencies(&self, dst: &mut impl Extend<<Object as SumObject>::Id>) {
-        self.walk_dependencies(dst);
-    }
-
-    fn eval(&self, dst: &mut Self::Val, ctx: &impl EvalCtx<Object>) -> Result<(), Self::EvalError> {
-        *dst = self.eval_expr(ctx)?;
-        Ok(())
-    }
-}
-
-impl Case<ObjectId> for ExpressionId {
-    fn project(s: &ObjectId) -> Option<&Self> {
-        match s {
-            ObjectId::Expression(inner) => Some(inner),
-            _ => None,
-        }
-    }
-    fn project_mut(s: &mut ObjectId) -> Option<&mut Self> {
-        match s {
-            ObjectId::Expression(inner) => Some(inner),
-            _ => None,
-        }
-    }
-}
-
-impl Case<Object> for ExpressionObj {
-    fn project(s: &Object) -> Option<&Self> {
-        match s {
-            Object::Expression(inner) => Some(inner),
-            _ => None,
-        }
-    }
-    fn project_mut(s: &mut Object) -> Option<&mut Self> {
-        match s {
-            Object::Expression(inner) => Some(inner),
-            _ => None,
-        }
-    }
-}
-
-impl Case<Value> for ExpressionVal {
-    fn project(s: &Value) -> Option<&Self> {
-        match s {
-            Value::Expression(inner) => Some(inner),
-            _ => None,
-        }
-    }
-    fn project_mut(s: &mut Value) -> Option<&mut Self> {
-        match s {
-            Value::Expression(inner) => Some(inner),
-            _ => None,
         }
     }
 }

@@ -1,11 +1,147 @@
 use super::*;
 use crate::construction::{Object, ObjectId};
-use crate::core::*;
+use crate::{ObjectKind, TaggedObjectId, core::*};
 use crate::{arena::*, geom};
 
+#[derive(Debug, Clone)]
+pub enum Action {
+    AddPoint(PointDefinition),
+    AddLine(PointId, PointId),
+    AddCurve(PointId, PointId),
+    DragTo(ObjectId, Point2),
+    // TODO ...
+}
+
+#[derive(Debug, Clone)]
+pub enum PointDefinition {
+    // the dist/angle expressions would probably be constant initially (as produced by the tool)
+    // then a more complex expression could be entered with a dialog?
+    DistAngle {
+        parent: PointId,
+        dist: LengthExpression,
+        angle: AngleExpression,
+    },
+    Free {
+        pos: Point2,
+    },
+    OnLineRel {
+        from: PointId,
+        to: PointId,
+        frac: f64,
+    },
+    OnCurveAbs {
+        curve: CurveId,
+        length: LengthExpression,
+    },
+    // TODO: ...
+}
+
 impl Arena<Object> {
+    pub fn apply_action(&mut self, action: Action) {
+        match action {
+            Action::DragTo(id, pos) => {
+                self.drag_to(id, pos);
+            }
+            Action::AddPoint(PointDefinition::DistAngle {
+                parent,
+                dist,
+                angle,
+            }) => {
+                _ = self.add_point_relative(parent, dist, angle);
+            }
+            Action::AddPoint(PointDefinition::Free { pos }) => _ = self.add_root(pos),
+            Action::AddLine(p, q) => {
+                _ = self.add_line(p, q);
+            }
+            Action::AddPoint(PointDefinition::OnLineRel { from, to, frac }) => {
+                let exp = expression::dist_between(from, to) * frac;
+                self.add_point_on_line(from, to, exp);
+            }
+            Action::AddPoint(PointDefinition::OnCurveAbs { curve, length }) => {
+                self.add_point_on_curve(curve, length);
+            }
+            Action::AddCurve(p, q) => {
+                self.add_curve(p, q);
+            }
+        }
+    }
+
+    // HACK: ...
+    pub fn get_tagged_id(&self, id: ObjectId) -> Option<TaggedObjectId> {
+        let obj = &self.objs[*self.id_to_idx.get(&id)?].1;
+        let kind = match obj {
+            Object::Point(PointObj::DistAngle { .. }) => ObjectKind::PointDistAngle,
+            Object::Point(PointObj::OnLine { .. }) => ObjectKind::PointOnLine,
+            Object::Point(PointObj::OnCurve { .. }) => ObjectKind::PointOnCurve,
+            Object::Point(PointObj::Root { .. }) => ObjectKind::PointFree,
+            Object::Line(_) => ObjectKind::Line,
+            Object::Curve(_) => ObjectKind::Curve,
+            Object::CurveControl(_) => ObjectKind::CurveControl,
+            _ => None?,
+        };
+
+        let raw = usize::from(id) as i32;
+        Some(TaggedObjectId { kind, raw })
+    }
+
+    pub fn get_object_data(&self, id: ObjectId) -> crate::ObjectDataResponse {
+        let obj = &self.objs[*self.id_to_idx.get(&id).unwrap()].1;
+        match obj {
+            Object::Point(PointObj::DistAngle { dist, angle, .. }) => {
+                let mut data = crate::ObjectDataResponse::default();
+                let d = self.stringify(dist.inner());
+                let a = self.stringify(angle.inner());
+
+                data.ok = true;
+                data.id = crate::TaggedObjectId {
+                    raw: usize::from(id) as i32,
+                    kind: crate::ObjectKind::PointDistAngle,
+                };
+                data.data.angle = a.into();
+                data.data.length = d.into();
+                data
+            }
+            _ => crate::ObjectDataResponse {
+                err: "not implemented".into(),
+                ..Default::default()
+            },
+        }
+    }
+
+    pub fn apply_object_data(&mut self, update: crate::ObjectDataUpdate) {
+        match update.id.kind {
+            crate::ObjectKind::PointDistAngle => {
+                let new_dist = self.parse::<LengthExpression>(update.data.length);
+                let new_angle = self.parse::<AngleExpression>(update.data.angle);
+                let id = PointId::from(update.id.raw as usize);
+                let obj = self.get_obj_mut::<PointObj>(id).unwrap();
+                match obj {
+                    PointObj::DistAngle { dist, angle, .. } => {
+                        *dist = new_dist;
+                        *angle = new_angle;
+                    }
+                    _ => {
+                        println!("PointObj match fell through")
+                    }
+                }
+            }
+
+            _ => {
+                println!("fell through: {:?}", update.id)
+            }
+        }
+    }
+
     pub fn iter_vals(&self) -> impl Iterator<Item = &Option<Value>> {
         self.vals.iter()
+    }
+
+    pub fn iter_triples(&self) -> impl Iterator<Item = (ObjectId, &Object, Option<&Value>)> {
+        debug_assert_eq!(self.objs.len(), self.vals.len());
+        self.objs
+            .iter()
+            .zip(self.vals.iter())
+            .map(|((id, o), v)| (*id, o, v.as_ref()))
     }
 
     pub fn drag_to(&mut self, id: ObjectId, target: geom::Point2) {
@@ -52,6 +188,11 @@ impl Arena<Object> {
                     if d >= limit { None } else { Some(d) }
                 }
                 Value::Curve(c) => c.curve.dist(target, limit),
+                Value::Line(l) => {
+                    let (p, _) = geom::closest_point_on_line_segment(l.from, l.to, target);
+                    let d = p.dist(target);
+                    if d >= limit { None } else { Some(d) }
+                }
                 _ => None,
             }
         }
@@ -88,6 +229,7 @@ impl Arena<Object> {
         }
 
         // HACK: (workaround to make points on curves hoverable)
+        // (i do not want to implement real z-order with reordering, maybe a priority-based system would work)
         if closest_point.is_some() {
             closest_point
         } else {
@@ -105,19 +247,23 @@ impl Arena<Object> {
         dist: LengthExpression,
         angle: AngleExpression,
     ) -> PointId {
-        let dist = self.try_push_obj(ExpressionObj::from(dist));
-        let angle = self.try_push_obj(ExpressionObj::from(angle));
+        self.check_expr_dep(dist.inner());
+        self.check_expr_dep(angle.inner());
 
         let p = PointObj::DistAngle {
             parent,
             dist,
             angle,
         };
-        let p_id = self.try_push_obj(p);
+        self.try_push_obj(p)
+    }
 
-        self.add_line(parent, p_id);
-
-        p_id
+    fn check_expr_dep(&mut self, exp: &Expression) {
+        self.dep_scratch.clear();
+        exp.dependencies(&mut self.dep_scratch);
+        for d in self.dep_scratch.iter() {
+            assert!(self.id_to_idx.contains_key(d))
+        }
     }
 
     pub fn add_curve(&mut self, from: PointId, to: PointId) -> CurveId {
@@ -134,7 +280,7 @@ impl Arena<Object> {
     }
 
     pub fn add_point_on_curve(&mut self, curve: CurveId, dist: LengthExpression) -> PointId {
-        let dist = self.try_push_obj(ExpressionObj::from(dist));
+        self.check_expr_dep(dist.inner());
         self.try_push_obj(PointObj::OnCurve { curve, dist })
     }
 
@@ -174,12 +320,6 @@ impl Arena<Object> {
     }
 
     pub fn add_line(&mut self, from: PointId, to: PointId) -> LineId {
-        // lines are pretty much cosmetic right now
-        // 1. placing a point "on a line" is done without involving an actual line object
-        // 2. ExpressionObj::Dist also just measures the distance between two points
-        //
-        // intersecting with a line could also be done with the implied line/beam between two
-        // points? tbd
         self.try_push_obj(LineObj { from, to })
     }
 
@@ -189,13 +329,112 @@ impl Arena<Object> {
         to: PointId,
         dist: LengthExpression,
     ) -> PointId {
-        let dist = self.try_push_obj(ExpressionObj::from(dist));
+        self.check_expr_dep(dist.inner());
         self.try_push_obj(PointObj::OnLine { from, to, dist })
     }
 
     pub fn get_value_for<V: Variant<Object>>(&self, id: V::Id) -> Option<&V::Val> {
         let idx = *self.id_to_idx.get(&(id.into()))?;
         V::Val::project(self.vals[idx].as_ref()?)
+    }
+
+    pub fn get_obj<V: Variant<Object>>(&self, id: V::Id) -> Option<&V> {
+        let idx = *self.id_to_idx.get(&(id.into()))?;
+        V::project(&self.objs[idx].1)
+    }
+
+    fn get_obj_mut<V: Variant<Object>>(&mut self, id: V::Id) -> Option<&mut V> {
+        let idx = *self.id_to_idx.get(&(id.into()))?;
+        V::project_mut(&mut self.objs[idx].1)
+    }
+
+    pub fn get_obj_gen(&self, id: ObjectId) -> Option<&Object> {
+        self.id_to_idx.get(&id).map(|&i| &self.objs[i].1)
+    }
+
+    pub fn can_delete(&self, id: ObjectId) -> bool {
+        if !self.id_to_idx.contains_key(&id) {
+            false
+        } else {
+            let deps = self.depependents.get(&id).unwrap();
+            deps.is_empty()
+        }
+    }
+
+    pub fn stringify<S>(&self, s: &S) -> String
+    where
+        S: Stringify,
+    {
+        s.stringify(self)
+    }
+
+    pub fn parse<P>(&self, input: impl AsRef<str>) -> P
+    where
+        P: Parse,
+    {
+        P::parse(input, self)
+    }
+
+    pub fn delete(&mut self, id: ObjectId) {
+        if self.delete_obj(id) {
+            self.trim_orphans()
+        }
+    }
+
+    // HACK: could probably be done more efficiently
+    fn delete_obj(&mut self, id: ObjectId) -> bool {
+        if !self.can_delete(id) {
+            debug_assert!(false, "should not be reached");
+            // defensive no-op in release
+            return false;
+        }
+
+        let Some(&idx) = self.id_to_idx.get(&id) else {
+            return false;
+        };
+
+        let obj = &self.objs[idx].1;
+
+        // TODO: reuse self.dep_scratch
+        let mut v = vec![];
+
+        obj.dependencies_dispatch(&mut v);
+
+        for d in v {
+            let deps = self.depependents.get_mut(&d).unwrap();
+            debug_assert!(
+                deps.remove(&id),
+                "dependencies and dependents should be consistent"
+            );
+        }
+
+        // O(n) but it is what it is
+        // can't use swap_remove here
+        self.objs.remove(idx);
+        self.vals.remove(idx);
+
+        self.id_to_idx.remove(&id).unwrap();
+        self.depependents.remove(&id).unwrap();
+
+        for j in idx..self.objs.len() {
+            let id = self.objs[j].0;
+            let prev_idx = self.id_to_idx.insert(id, j);
+            debug_assert_eq!(prev_idx.unwrap(), j + 1);
+        }
+
+        true
+    }
+
+    fn trim_orphans(&mut self) {
+        // orphaned curve controls need to be removed
+        for i in (0..self.objs.len()).rev() {
+            let (id, obj) = &self.objs[i];
+            if matches!(obj, Object::CurveControl(_))
+                && self.depependents.get(id).unwrap().is_empty()
+            {
+                debug_assert!(self.delete_obj(*id), "should have existed and been deleted");
+            }
+        }
     }
 }
 
@@ -213,17 +452,17 @@ mod tests {
         let q = a.add_point_relative(p, expression::length(234.), expression::angle(0.));
         let r = a.add_point_relative(p, expression::length(98.), expression::angle(PI / 2.));
 
-        let exp = ExpressionObj::from(expression::dist_between(q, r));
+        let obj = VariableObj::Length(expression::dist_between(q, r));
 
-        let e = a.try_push_obj(exp);
+        let e = a.try_push_obj(obj);
 
         a.evaluate_all();
 
         let dist = a
-            .get_value_for::<ExpressionObj>(e)
+            .get_value_for::<VariableObj>(e)
             .expect("should be present");
 
-        let d = dist.try_as_length().expect("should be length variant");
+        let d = dist.val.try_as_length().expect("should be length variant");
 
         assert_relative_eq!(d, (234f64.powi(2) + 98f64.powi(2)).sqrt());
     }

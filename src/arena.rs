@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 use crate::core::*;
@@ -26,11 +26,11 @@ where
 
 pub struct Arena<S: SumObject> {
     pub(crate) objs: Vec<(S::Id, S)>,
-    pub(crate) ids: Vec<S::Id>,
     pub(crate) vals: Vec<Option<S::Value>>,
     pub(crate) id_to_idx: HashMap<S::Id, usize>,
+    pub(crate) depependents: HashMap<S::Id, HashSet<S::Id>>,
     next_id_raw: usize,
-    dep_scratch: Vec<S::Id>,
+    pub(crate) dep_scratch: Vec<S::Id>,
     #[allow(unused)] // TODO: track somehow?
     min_dirty: Option<usize>,
 }
@@ -40,12 +40,13 @@ impl<S: SumObject> Default for Arena<S> {
         // derived Default has unwanted bounds
         Self {
             objs: Default::default(),
-            ids: Default::default(),
+            // ids: Default::default(),
             id_to_idx: Default::default(),
             next_id_raw: Default::default(),
             dep_scratch: Default::default(),
             min_dirty: Default::default(),
             vals: Default::default(),
+            depependents: Default::default(),
         }
     }
 }
@@ -55,24 +56,43 @@ where
     S: SumObject,
     S::Id: PartialEq + Eq + Hash,
 {
+    pub fn next_id<V>(&mut self) -> V::Id
+    where
+        V: Variant<S>,
+    {
+        let id = V::Id::from(self.next_id_raw);
+        self.next_id_raw += 1;
+        id
+    }
+
     pub fn try_push_obj<V: Variant<S>>(&mut self, o: V) -> V::Id {
         self.dep_scratch.clear();
         o.dependencies(&mut self.dep_scratch);
 
-        for dep_id in self.dep_scratch.iter() {
-            if !self.id_to_idx.contains_key(dep_id) {
-                panic!("missing dep")
-            }
-        }
-
         let variant_id = V::Id::from(self.next_id_raw);
         let id = variant_id.into();
         self.next_id_raw += 1;
+
+        for dep_id in self.dep_scratch.iter() {
+            if !self.id_to_idx.contains_key(dep_id) {
+                panic!("missing dep")
+            } else {
+                let dep = self.depependents.get_mut(dep_id).unwrap();
+                dep.insert(id);
+            }
+        }
+
+        // let variant_id =
+        // let id = variant_id.into();
+        // self.next_id_raw += 1;
         let idx = self.objs.len();
 
         self.id_to_idx.insert(id, idx);
+
+        self.depependents.insert(id, HashSet::new());
+
         self.objs.push((id, o.into()));
-        self.ids.push(id);
+        // self.ids.push(id);
 
         // at this point we know the variants value type, could push it
         // but that would require a C::Val: Default bound here
@@ -114,7 +134,7 @@ where
             None
         } else {
             Some((
-                self.ids[idx],
+                self.objs[idx].0,
                 &self.objs[idx].1,
                 self.vals[idx].as_ref().expect("hacky"),
             ))

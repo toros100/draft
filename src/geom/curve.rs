@@ -127,7 +127,7 @@ impl CubicBezier {
         Rect::new(x_min, y_max, x_max - x_min, y_max - y_min)
     }
 
-    pub fn closest_to_at_approx(&self, target: Point2, limit: f64) -> Option<f64> {
+    pub fn closest_to_at_approx_limit(&self, target: Point2, limit: f64) -> Option<f64> {
         // TODO: not very nice
 
         if !self.bounding_rect().grow(limit).contains(target) {
@@ -147,8 +147,22 @@ impl CubicBezier {
         }
     }
 
+    pub fn closest_to_at_approx(&self, target: Point2) -> f64 {
+        let mut t_min = 0.;
+        let mut d_min = f64::INFINITY;
+        for i in 0..BEZIER_STEPS {
+            let t = (i as f64) / ((BEZIER_STEPS - 1) as f64);
+            let d = self.at(t).dist(target);
+            if d < d_min {
+                d_min = d;
+                t_min = t
+            }
+        }
+        t_min
+    }
+
     pub fn dist(&self, target: Point2, limit: f64) -> Option<f64> {
-        match self.closest_to_at_approx(target, limit) {
+        match self.closest_to_at_approx_limit(target, limit) {
             Some(t) if self.at(t).dist(target) >= limit => None,
             o => o,
         }

@@ -9,8 +9,8 @@ pub enum ObjectId {
     Line(LineId),
     Curve(CurveId),
     CurveControl(CurveControlId),
-    Expression(ExpressionId),
     Path(PathId),
+    Variable(VariableId),
 }
 
 impl From<ObjectId> for usize {
@@ -20,8 +20,8 @@ impl From<ObjectId> for usize {
             ObjectId::Line(inner) => inner.0,
             ObjectId::CurveControl(inner) => inner.0,
             ObjectId::Curve(inner) => inner.0,
-            ObjectId::Expression(inner) => inner.0,
             ObjectId::Path(inner) => inner.0,
+            ObjectId::Variable(inner) => inner.0,
         }
     }
 }
@@ -46,9 +46,9 @@ pub enum Object {
     // might still want to allow its measurements (dist/angle) to be used in expressions?
     CurveControl(CurveControlObj),
 
-    Expression(ExpressionObj),
-
     Path(PathObj),
+
+    Variable(VariableObj),
 }
 
 #[derive(Debug, Clone)]
@@ -58,8 +58,8 @@ pub enum Value {
     Line(LineVal),
     Curve(CurveVal),
     CurveControl(CurveControlVal),
-    Expression(ExpressionVal),
     Path(PathVal),
+    Variable(VariableVal),
 }
 
 #[derive(Error, Debug)]
@@ -88,8 +88,18 @@ impl SumObject for Object {
             Object::Line(inner) => inner.eval(project_or_default(dst), ctx),
             Object::CurveControl(inner) => inner.eval(project_or_default(dst), ctx),
             Object::Curve(inner) => inner.eval(project_or_default(dst), ctx),
-            Object::Expression(inner) => inner.eval(project_or_default(dst), ctx),
             Object::Path(inner) => inner.eval(project_or_default(dst), ctx),
+            Object::Variable(inner) => inner.eval(project_or_default(dst), ctx),
+        }
+    }
+    fn dependencies_dispatch(&self, dst: &mut impl Extend<Self::Id>) {
+        match self {
+            Object::Point(inner) => inner.dependencies(dst),
+            Object::Line(inner) => inner.dependencies(dst),
+            Object::CurveControl(inner) => inner.dependencies(dst),
+            Object::Curve(inner) => inner.dependencies(dst),
+            Object::Path(inner) => inner.dependencies(dst),
+            Object::Variable(inner) => inner.dependencies(dst),
         }
     }
 }

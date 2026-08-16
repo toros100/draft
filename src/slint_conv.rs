@@ -1,32 +1,22 @@
-use crate::construction::ObjectId;
-use crate::core::*;
+use crate::construction::{CurveControlId, CurveId, LineId, ObjectId, PointId};
 use crate::geom::Point2;
+use crate::{TaggedObjectId, core::*};
 
 pub trait SlintData<V: Variant<S>, S: SumObject>: 'static + Clone {
     fn from_id_and_value(id: <V as Variant<S>>::Id, value: &<V as Variant<S>>::Val) -> Self;
 }
 
-pub const ID_NONE: crate::slint_generatedMainWindow::OptionObjId =
-    crate::slint_generatedMainWindow::OptionObjId { raw: -1 };
-
-impl From<Option<ObjectId>> for crate::slint_generatedMainWindow::OptionObjId {
-    fn from(value: Option<ObjectId>) -> Self {
-        match value {
-            Some(i) => {
-                let raw = <ObjectId as Into<usize>>::into(i) as i32;
-                debug_assert!(raw >= 0);
-                crate::slint_generatedMainWindow::OptionObjId { raw }
-            }
-            None => ID_NONE,
+impl From<TaggedObjectId> for ObjectId {
+    fn from(value: TaggedObjectId) -> Self {
+        match value.kind {
+            crate::ObjectKind::PointDistAngle
+            | crate::ObjectKind::PointFree
+            | crate::ObjectKind::PointOnLine
+            | crate::ObjectKind::PointOnCurve => PointId::from(value.raw as usize).into(),
+            crate::ObjectKind::Line => LineId::from(value.raw as usize).into(),
+            crate::ObjectKind::Curve => CurveId::from(value.raw as usize).into(),
+            crate::ObjectKind::CurveControl => CurveControlId::from(value.raw as usize).into(),
         }
-    }
-}
-
-impl From<ObjectId> for crate::slint_generatedMainWindow::ObjId {
-    fn from(value: ObjectId) -> Self {
-        let raw = <ObjectId as Into<usize>>::into(value) as i32;
-        debug_assert!(raw >= 0);
-        Self { raw }
     }
 }
 

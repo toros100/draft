@@ -1,7 +1,13 @@
+use crate::construction::Action;
+use crate::construction::PointDefinition;
+use std::f64;
+use std::f64::consts::PI;
+
+use slint::language::KeyboardModifiers;
+
 use crate::arena::Arena;
-use crate::construction::{
-    AngleExpression, LengthExpression, Object, PointId, PointObj, expression,
-};
+use crate::construction::{CurveId, CurveObj, Object, PointId, PointObj, expression};
+use crate::geom::{self, CubicBezier};
 use crate::{construction::ObjectId, geom::Point2};
 
 static_assertions::assert_obj_safe!(Tool);
@@ -13,8 +19,6 @@ pub struct ToolResponse {
     pub overlay_changed: bool,
 }
 
-// TODO: add modifier (ctrl/shift)
-// (to for example implement snapping behaviour for some tools, like choice of angle)
 #[derive(Debug, Clone, Copy)]
 pub enum ToolInput {
     Press { obj: Option<ObjectId>, pos: Point2 },
@@ -30,45 +34,21 @@ pub enum ToolInput {
 pub enum PathPrimitive {
     Line(Point2, Point2),
     Point(Point2),
-    Curve(Point2, Point2, Point2, Point2),
+    Curve(CubicBezier),
     // would be nice to have stuff like
     // HighlightPoint(PointId)
     // to let the renderer know to highlight a particular point
 }
 
-#[derive(Debug, Clone)]
-pub enum Action {
-    AddPoint(PointDefinition),
-    AddLine(PointId, PointId),
-    AddCurve(PointId, PointId),
-    DragTo(ObjectId, Point2),
-    // TODO ...
-}
-
-#[derive(Debug, Clone)]
-pub enum PointDefinition {
-    // the dist/angle expressions would probably be constant initially (as produced by the tool)
-    // then a more complex expression could be entered with a dialog?
-    DistAngle {
-        parent: PointId,
-        dist: LengthExpression,
-        angle: AngleExpression,
-    },
-    Free {
-        pos: Point2,
-    },
-    OnLineRel {
-        from: PointId,
-        to: PointId,
-        frac: f64,
-    },
-    // TODO: ...
-}
-
 pub trait Tool {
     // tool receives events, responds with state that may contain an action that should be applied
     // to the Arena<Object>
-    fn submit(&mut self, input: ToolInput, arena: &Arena<Object>) -> ToolResponse;
+    fn submit(
+        &mut self,
+        input: ToolInput,
+        modifiers: KeyboardModifiers,
+        arena: &Arena<Object>,
+    ) -> ToolResponse;
 
     // the tool may produce a description of some overlay paths that should be renderer
     // (e.g. when adding a point at dist/angle of another point: a virtual line from the position of
@@ -93,7 +73,12 @@ pub struct Drag {
 }
 
 impl Tool for Drag {
-    fn submit(&mut self, input: ToolInput, _: &Arena<Object>) -> ToolResponse {
+    fn submit(
+        &mut self,
+        input: ToolInput,
+        _: KeyboardModifiers,
+        _: &Arena<Object>,
+    ) -> ToolResponse {
         match input {
             ToolInput::Press { obj: Some(o), .. } if self.holding.is_none() => {
                 match o {
@@ -147,7 +132,15 @@ pub struct AddPointDistAngle {
 }
 
 impl Tool for AddPointDistAngle {
-    fn submit(&mut self, input: ToolInput, arena: &Arena<Object>) -> ToolResponse {
+    fn submit(
+        &mut self,
+        input: ToolInput,
+        modifiers: KeyboardModifiers,
+        arena: &Arena<Object>,
+    ) -> ToolResponse {
+        // NOTE: maybe pos should not be in the ToolInput enum
+        // its very annoying to have to destructure each variant and apply the same transformation
+        // to essentially the same value
         match input {
             ToolInput::Press {
                 obj: Some(ObjectId::Point(id)),
@@ -155,6 +148,11 @@ impl Tool for AddPointDistAngle {
             } if self.parent.is_none() => {
                 self.parent = Some(id);
                 let parent_pos = arena.get_value_for::<PointObj>(id).expect("TODO").pos;
+                let pos = if modifiers.shift {
+                    snap_angle(parent_pos, pos)
+                } else {
+                    pos
+                };
                 self.overlay = Some([
                     PathPrimitive::Line(pos, parent_pos),
                     PathPrimitive::Point(pos),
@@ -167,6 +165,11 @@ impl Tool for AddPointDistAngle {
             }
             ToolInput::Press { pos, .. } if let Some(parent) = self.parent => {
                 let parent_pos = arena.get_value_for::<PointObj>(parent).expect("TODO").pos;
+                let pos = if modifiers.shift {
+                    snap_angle(parent_pos, pos)
+                } else {
+                    pos
+                };
                 let ang = parent_pos.angle(pos);
                 let dist = parent_pos.dist(pos);
                 ToolResponse {
@@ -181,6 +184,12 @@ impl Tool for AddPointDistAngle {
             }
             ToolInput::Move { pos, .. } if let Some(parent) = self.parent => {
                 let parent_pos = arena.get_value_for::<PointObj>(parent).expect("TODO").pos;
+                let pos = if modifiers.shift {
+                    snap_angle(parent_pos, pos)
+                } else {
+                    pos
+                };
+
                 self.overlay = Some([
                     PathPrimitive::Line(pos, parent_pos),
                     PathPrimitive::Point(pos),
@@ -212,6 +221,13 @@ impl Tool for AddPointDistAngle {
     }
 }
 
+fn snap_angle(parent: Point2, other: Point2) -> Point2 {
+    let mut p = geom::Polar::from(other - parent);
+    p.angle = ((p.angle / f64::consts::FRAC_PI_4).round() * f64::consts::FRAC_PI_4)
+        .rem_euclid(f64::consts::TAU);
+    parent + p
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct Line {
     first: Option<PointId>,
@@ -219,7 +235,12 @@ pub struct Line {
 }
 
 impl Tool for Line {
-    fn submit(&mut self, input: ToolInput, arena: &Arena<Object>) -> ToolResponse {
+    fn submit(
+        &mut self,
+        input: ToolInput,
+        _: KeyboardModifiers,
+        arena: &Arena<Object>,
+    ) -> ToolResponse {
         match input {
             ToolInput::Press { obj, .. }
                 if self.first.is_none()
@@ -282,7 +303,12 @@ pub struct Free {
 }
 
 impl Tool for Free {
-    fn submit(&mut self, input: ToolInput, _: &Arena<Object>) -> ToolResponse {
+    fn submit(
+        &mut self,
+        input: ToolInput,
+        _: KeyboardModifiers,
+        _: &Arena<Object>,
+    ) -> ToolResponse {
         match input {
             ToolInput::Move { pos, .. } => {
                 self.overlay = Some([PathPrimitive::Point(pos)]);
@@ -322,7 +348,12 @@ pub struct OnLine {
 }
 
 impl Tool for OnLine {
-    fn submit(&mut self, input: ToolInput, arena: &Arena<Object>) -> ToolResponse {
+    fn submit(
+        &mut self,
+        input: ToolInput,
+        _: KeyboardModifiers,
+        arena: &Arena<Object>,
+    ) -> ToolResponse {
         match input {
             ToolInput::Press {
                 obj: Some(ObjectId::Point(l)),
@@ -371,9 +402,17 @@ impl Tool for OnLine {
             {
                 let first = arena.get_value_for::<PointObj>(first).unwrap().pos;
                 let second = arena.get_value_for::<PointObj>(second).unwrap().pos;
-                let (p, _) = closest_point_on_line(first, second, pos);
+                let (p, t) = geom::closest_point_on_beam(first, second, pos);
 
-                self.overlay = Some([PathPrimitive::Line(first, second), PathPrimitive::Point(p)]);
+                let (u, v) = if t < 0. {
+                    (p, second)
+                } else if t > 1. {
+                    (first, p)
+                } else {
+                    (first, second)
+                };
+
+                self.overlay = Some([PathPrimitive::Line(u, v), PathPrimitive::Point(p)]);
 
                 ToolResponse {
                     done: false,
@@ -388,7 +427,7 @@ impl Tool for OnLine {
             {
                 let first_pos = arena.get_value_for::<PointObj>(first).unwrap().pos;
                 let second_pos = arena.get_value_for::<PointObj>(second).unwrap().pos;
-                let (_, t) = closest_point_on_line(first_pos, second_pos, pos);
+                let (_, t) = geom::closest_point_on_beam(first_pos, second_pos, pos);
 
                 ToolResponse {
                     done: true,
@@ -419,9 +458,152 @@ impl Tool for OnLine {
     }
 }
 
-fn closest_point_on_line(a: Point2, b: Point2, q: Point2) -> (Point2, f64) {
-    let ab = b - a;
-    let aq = q - a;
-    let t = (aq.dot(ab) / ab.dot(ab)).clamp(0.0, 1.0);
-    (a + t * ab, t)
+#[derive(Debug, Default, Clone)]
+pub struct Curve {
+    first: Option<PointId>,
+    overlay: Option<[PathPrimitive; 1]>,
+}
+
+impl Tool for Curve {
+    fn submit(
+        &mut self,
+        input: ToolInput,
+        _: KeyboardModifiers,
+        arena: &Arena<Object>,
+    ) -> ToolResponse {
+        match input {
+            ToolInput::Press { obj, .. }
+                if self.first.is_none()
+                    && let Some(ObjectId::Point(id)) = obj =>
+            {
+                self.first = Some(id);
+                ToolResponse {
+                    done: false,
+                    action: None,
+                    overlay_changed: false,
+                }
+            }
+            ToolInput::Move { obj, pos } if let Some(first) = self.first => {
+                let first_pos = arena.get_value_for::<PointObj>(first).expect("TODO").pos;
+
+                let (from, to) = if let Some(ObjectId::Point(id)) = obj {
+                    let second_pos = arena.get_value_for::<PointObj>(id).expect("TODO").pos;
+                    (first_pos, second_pos)
+                } else {
+                    (first_pos, pos)
+                };
+
+                // slightly curvy phantom curve to make it look visually distinct from the line tool
+                let l = from.dist(to);
+                let control_dist = l / 4.;
+                let control_1_angle = from.angle(to) + PI / 4.0;
+                let control_2_angle = to.angle(from) + PI / 4.0;
+                let control_1 = from + geom::polar(control_dist, control_1_angle);
+                let control_2 = to + geom::polar(control_dist, control_2_angle);
+                let c = geom::curve(from, control_1, control_2, to);
+
+                self.overlay = Some([PathPrimitive::Curve(c)]);
+
+                ToolResponse {
+                    done: false,
+                    action: None,
+                    overlay_changed: true,
+                }
+            }
+            ToolInput::Press { obj: target, .. }
+                if let Some(p) = self.first
+                    && let Some(ObjectId::Point(q)) = target =>
+            {
+                self.reset();
+                ToolResponse {
+                    done: true,
+                    action: Some(Action::AddCurve(p, q)),
+                    overlay_changed: true,
+                }
+            }
+            _ => ToolResponse {
+                done: false,
+                action: None,
+                overlay_changed: false,
+            },
+        }
+    }
+    fn reset(&mut self) {
+        self.first = None;
+        self.overlay = None;
+    }
+    fn overlay(&self) -> &[PathPrimitive] {
+        match self.overlay.as_ref() {
+            Some(o) => o.as_slice(),
+            None => &[],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct OnCurve {
+    overlay: Option<[PathPrimitive; 2]>,
+    curve: Option<CurveId>,
+}
+
+impl Tool for OnCurve {
+    fn submit(
+        &mut self,
+        input: ToolInput,
+        _: KeyboardModifiers,
+        arena: &Arena<Object>,
+    ) -> ToolResponse {
+        match input {
+            ToolInput::Press {
+                obj: Some(ObjectId::Curve(l)),
+                ..
+            } if self.curve.is_none() => {
+                self.curve = Some(l);
+                ToolResponse::default()
+            }
+
+            ToolInput::Move { pos, .. } if let Some(curve) = self.curve => {
+                let c = arena.get_value_for::<CurveObj>(curve).unwrap().curve;
+                let (p, _) = geom::closest_point_on_curve(c, pos);
+
+                self.overlay = Some([PathPrimitive::Curve(c), PathPrimitive::Point(p)]);
+
+                ToolResponse {
+                    done: false,
+                    action: None,
+                    overlay_changed: true,
+                }
+            }
+
+            ToolInput::Press { pos, .. } if let Some(curve) = self.curve => {
+                let c = arena.get_value_for::<CurveObj>(curve).unwrap().curve;
+                let (_, t) = geom::closest_point_on_curve(c, pos);
+
+                let length = c.split_at(t).0.approx_length();
+
+                ToolResponse {
+                    done: true,
+                    action: Some(Action::AddPoint(PointDefinition::OnCurveAbs {
+                        curve,
+                        length: expression::length(length),
+                    })),
+                    overlay_changed: true,
+                }
+            }
+
+            _ => ToolResponse::default(),
+        }
+    }
+
+    fn overlay(&self) -> &[PathPrimitive] {
+        match self.overlay.as_ref() {
+            Some(o) => o,
+            None => &[],
+        }
+    }
+
+    fn reset(&mut self) {
+        self.overlay = None;
+        self.curve = None;
+    }
 }
