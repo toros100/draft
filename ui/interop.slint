@@ -1,0 +1,73 @@
+export enum ObjectKind {
+    PointFree,
+    PointDistAngle,
+    PointOnLine,
+    PointOnCurve,
+    Line,
+    Curve,
+    CurveControl,
+    LengthVariable,
+}
+
+export struct TaggedObjectId {
+    raw: int,
+    kind: ObjectKind,
+}
+
+export struct ObjectData {
+    str_1: string,
+    str_2: string,
+    bool_1: bool,
+    bool_2: bool,
+}
+
+export struct ObjectDataResponse {
+    ok: bool,
+    err: string,
+    id: TaggedObjectId,
+    data: ObjectData,
+}
+
+export struct ObjectDataUpdate {
+    id: TaggedObjectId,
+    data: ObjectData,
+}
+
+export struct HoverInfo {
+    is_some: bool,
+    can_delete: bool,
+    can_interact: bool,
+    id: TaggedObjectId,
+}
+
+
+export struct ToolData {
+    name: string,
+}
+
+export struct WorldPos {
+    x: float,
+    y: float,
+}
+
+export global Fmt {
+    public pure function fmt_object_kind(kind: ObjectKind) -> string {
+        if (kind == ObjectKind.PointFree) {
+            return "PointFree";
+        } else if (kind == ObjectKind.PointDistAngle) {
+            return "PointDistAngle";
+        } else if (kind == ObjectKind.PointOnLine) {
+            return "PointOnLine";
+        } else if (kind == ObjectKind.PointOnCurve) {
+            return "PointOnCurve";
+        } else if (kind == ObjectKind.Line) {
+            return "Line";
+        } else if (kind == ObjectKind.Curve) {
+            return "Curve";
+        } else if (kind == ObjectKind.CurveControl) {
+            return "CurveControl";
+        } else {
+            return "UNKNOWN";
+        }
+    }
+}

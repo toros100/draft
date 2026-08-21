@@ -1,5 +1,5 @@
 use super::*;
-use crate::{Case, Variant};
+use crate::{Case, VariantOld};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct VariableId(pub(crate) usize);
@@ -62,18 +62,6 @@ impl Case<Object> for VariableObj {
     }
 }
 
-impl From<VariableObj> for Object {
-    fn from(value: VariableObj) -> Self {
-        Self::Variable(value)
-    }
-}
-
-impl From<VariableId> for ObjectId {
-    fn from(value: VariableId) -> Self {
-        Self::Variable(value)
-    }
-}
-
 impl Case<Value> for VariableVal {
     fn project_mut(s: &mut Value) -> Option<&mut Self> {
         match s {
@@ -89,38 +77,32 @@ impl Case<Value> for VariableVal {
     }
 }
 
-impl From<VariableVal> for Value {
-    fn from(value: VariableVal) -> Self {
-        Self::Variable(value)
-    }
-}
-
-impl Variant<Object> for VariableObj {
+impl VariantOld<Object> for VariableObj {
     type Id = VariableId;
     type Val = VariableVal;
     type EvalError = EvalError;
-    fn eval(
+    fn eval_old(
         &self,
         dst: &mut Self::Val,
-        ctx: &impl crate::EvalCtx<Object>,
+        ctx: &impl crate::EvalCtxOld<Object>,
     ) -> Result<(), Self::EvalError> {
         match self {
-            VariableObj::Angle(inner) => match inner.inner().eval_expr(ctx)? {
+            VariableObj::Angle(inner) => match inner.inner().eval_expr_old(ctx)? {
                 val @ ExpressionVal::Angle(_) => *dst = VariableVal { val },
                 _ => return Err(EvalError::UnexpectedType),
             },
-            VariableObj::Length(inner) => match inner.inner().eval_expr(ctx)? {
+            VariableObj::Length(inner) => match inner.inner().eval_expr_old(ctx)? {
                 val @ ExpressionVal::Length(_) => *dst = VariableVal { val },
                 _ => return Err(EvalError::UnexpectedType),
             },
-            VariableObj::Scalar(inner) => match inner.inner().eval_expr(ctx)? {
+            VariableObj::Scalar(inner) => match inner.inner().eval_expr_old(ctx)? {
                 val @ ExpressionVal::Scalar(_) => *dst = VariableVal { val },
                 _ => return Err(EvalError::UnexpectedType),
             },
         }
         Ok(())
     }
-    fn dependencies(&self, dst: &mut impl Extend<<Object as crate::SumObject>::Id>) {
+    fn dependencies_old(&self, dst: &mut impl Extend<<Object as crate::SumObject>::Id>) {
         match self {
             VariableObj::Angle(exp) => {
                 exp.inner().dependencies(dst);

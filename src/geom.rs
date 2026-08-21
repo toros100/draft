@@ -1,10 +1,7 @@
-// yes i had to, no i could not just have used an existing crate
+use std::ops::{Add, Mul, Sub};
 
 mod curve;
 pub use curve::*;
-use vello::kurbo;
-
-use std::ops::{Add, Mul, Sub};
 
 // TODO: refactor (Line type?)
 pub fn closest_point_on_line_segment(a: Point2, b: Point2, q: Point2) -> (Point2, f64) {
@@ -55,7 +52,7 @@ impl Add for Point2 {
 }
 
 impl Point2 {
-    fn as_vec(self) -> Vec2 {
+    fn into_vec(self) -> Vec2 {
         Vec2 {
             x: self.x,
             y: self.y,
@@ -70,6 +67,11 @@ impl Point2 {
         let dx = other.x - self.x;
         let dy = other.y - self.y;
         (dx * dx + dy * dy).sqrt()
+    }
+
+    pub fn dist_limit(self, other: Point2, limit: f64) -> Option<f64> {
+        let d = self.dist(other);
+        if d < limit { Some(d) } else { None }
     }
 
     pub fn angle(self, other: Point2) -> f64 {
@@ -93,23 +95,17 @@ impl Polar {
     pub fn new(dist: f64, angle: f64) -> Self {
         Self { dist, angle }
     }
-    pub fn to_vec(self) -> Vec2 {
+    pub fn into_vec(self) -> Vec2 {
         let x = self.dist * self.angle.cos();
         let y = self.dist * self.angle.sin();
         Vec2 { x, y }
     }
 }
 
-impl From<Polar> for Vec2 {
-    fn from(value: Polar) -> Self {
-        value.to_vec()
-    }
-}
-
 impl Add<Polar> for Point2 {
     type Output = Point2;
     fn add(self, rhs: Polar) -> Self::Output {
-        self + rhs.to_vec()
+        self + rhs.into_vec()
     }
 }
 
@@ -133,7 +129,7 @@ impl Add<Vec2> for Point2 {
 pub const EPS: f64 = 1e-10;
 
 impl Vec2 {
-    fn as_point(self) -> Point2 {
+    fn into_point(self) -> Point2 {
         Point2 {
             x: self.x,
             y: self.y,
@@ -159,7 +155,7 @@ impl Vec2 {
         self
     }
 
-    pub fn to_polar(self) -> Polar {
+    pub fn into_polar(self) -> Polar {
         Polar {
             dist: self.norm(),
             angle: f64::atan2(self.y, self.x),
@@ -169,7 +165,13 @@ impl Vec2 {
 
 impl From<Vec2> for Polar {
     fn from(value: Vec2) -> Self {
-        value.to_polar()
+        value.into_polar()
+    }
+}
+
+impl From<Polar> for Vec2 {
+    fn from(value: Polar) -> Self {
+        value.into_vec()
     }
 }
 
@@ -217,7 +219,7 @@ impl Mul<Vec2> for f64 {
     }
 }
 
-impl From<Point2> for kurbo::Point {
+impl From<Point2> for vello::kurbo::Point {
     fn from(value: Point2) -> Self {
         Self {
             x: value.x,
@@ -226,8 +228,8 @@ impl From<Point2> for kurbo::Point {
     }
 }
 
-impl From<kurbo::Point> for Point2 {
-    fn from(value: kurbo::Point) -> Self {
+impl From<vello::kurbo::Point> for Point2 {
+    fn from(value: vello::kurbo::Point) -> Self {
         Self {
             x: value.x,
             y: value.y,
@@ -235,7 +237,7 @@ impl From<kurbo::Point> for Point2 {
     }
 }
 
-impl From<Vec2> for kurbo::Vec2 {
+impl From<Vec2> for vello::kurbo::Vec2 {
     fn from(value: Vec2) -> Self {
         Self {
             x: value.x,
@@ -244,8 +246,8 @@ impl From<Vec2> for kurbo::Vec2 {
     }
 }
 
-impl From<kurbo::Vec2> for Vec2 {
-    fn from(value: kurbo::Vec2) -> Self {
+impl From<vello::kurbo::Vec2> for Vec2 {
+    fn from(value: vello::kurbo::Vec2) -> Self {
         Self {
             x: value.x,
             y: value.y,

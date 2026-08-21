@@ -8,7 +8,6 @@ pub struct CubicBezier {
     pub p_3: Point2,
 }
 
-// TODO: use adaptive step count (more likely a different algorithm)
 const BEZIER_STEPS: usize = 1000;
 
 pub fn curve(p_0: Point2, p_1: Point2, p_2: Point2, p_3: Point2) -> CubicBezier {
@@ -49,11 +48,11 @@ impl CubicBezier {
         debug_assert!(t <= 1.);
         let t = t.clamp(0., 1.);
 
-        ((1. - t).powi(3) * self.p_0.as_vec()
-            + 3. * (1. - t).powi(2) * t * self.p_1.as_vec()
-            + 3. * (1. - t) * t.powi(2) * self.p_2.as_vec()
-            + t.powi(3) * self.p_3.as_vec())
-        .as_point()
+        ((1. - t).powi(3) * self.p_0.into_vec()
+            + 3. * (1. - t).powi(2) * t * self.p_1.into_vec()
+            + 3. * (1. - t) * t.powi(2) * self.p_2.into_vec()
+            + t.powi(3) * self.p_3.into_vec())
+        .into_point()
     }
 
     pub fn point_on(&self, dist_from_start: f64) -> (f64, Point2) {
@@ -87,10 +86,10 @@ impl CubicBezier {
         debug_assert!(t <= 1.);
         let t = t.clamp(0., 1.);
 
-        let b_0_0 = self.p_0.as_vec();
-        let b_1_0 = self.p_1.as_vec();
-        let b_2_0 = self.p_2.as_vec();
-        let b_3_0 = self.p_3.as_vec();
+        let b_0_0 = self.p_0.into_vec();
+        let b_1_0 = self.p_1.into_vec();
+        let b_2_0 = self.p_2.into_vec();
+        let b_3_0 = self.p_3.into_vec();
 
         let b_0_1 = b_0_0 * (1. - t) + b_1_0 * t;
         let b_1_1 = b_1_0 * (1. - t) + b_2_0 * t;
@@ -102,17 +101,17 @@ impl CubicBezier {
         let b_0_3 = b_0_2 * (1. - t) + b_1_2 * t;
 
         let first = CubicBezier {
-            p_0: b_0_0.as_point(),
-            p_1: b_0_1.as_point(),
-            p_2: b_0_2.as_point(),
-            p_3: b_0_3.as_point(),
+            p_0: b_0_0.into_point(),
+            p_1: b_0_1.into_point(),
+            p_2: b_0_2.into_point(),
+            p_3: b_0_3.into_point(),
         };
 
         let second = CubicBezier {
-            p_0: b_0_3.as_point(),
-            p_1: b_1_2.as_point(),
-            p_2: b_2_1.as_point(),
-            p_3: b_3_0.as_point(),
+            p_0: b_0_3.into_point(),
+            p_1: b_1_2.into_point(),
+            p_2: b_2_1.into_point(),
+            p_3: b_3_0.into_point(),
         };
 
         (first, second)
@@ -130,11 +129,9 @@ impl CubicBezier {
     pub fn closest_to_at_approx_limit(&self, target: Point2, limit: f64) -> Option<f64> {
         // TODO: not very nice
 
-        if !self.bounding_rect().grow(limit).contains(target) {
-            None
-        } else {
+        if self.bounding_rect().grow(limit).contains(target) {
             let mut t_min = None;
-            let mut d_min = f64::INFINITY;
+            let mut d_min = limit;
             for i in 0..BEZIER_STEPS {
                 let t = (i as f64) / ((BEZIER_STEPS - 1) as f64);
                 let d = self.at(t).dist(target);
@@ -144,6 +141,8 @@ impl CubicBezier {
                 }
             }
             t_min
+        } else {
+            None
         }
     }
 
@@ -161,14 +160,13 @@ impl CubicBezier {
         t_min
     }
 
-    pub fn dist(&self, target: Point2, limit: f64) -> Option<f64> {
-        match self.closest_to_at_approx_limit(target, limit) {
-            Some(t) if self.at(t).dist(target) >= limit => None,
-            o => o,
-        }
+    pub fn dist_limit(&self, target: Point2, limit: f64) -> Option<f64> {
+        self.closest_to_at_approx_limit(target, limit)
+            .map(|t| target.dist(self.at(t)))
     }
 }
 
+// if i used this anywhere else, it should probably be in its own module
 struct Rect {
     x: f64,
     y: f64,

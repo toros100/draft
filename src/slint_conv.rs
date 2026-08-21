@@ -1,27 +1,70 @@
-use crate::construction::{CurveControlId, CurveId, LineId, ObjectId, PointId};
+use crate::construction::{
+    CurveControlId, CurveId, LengthVariableId, LineId, ObjectId, PointDistAngleId, PointFreeId,
+    PointOnCurveId, PointOnLineId,
+};
 use crate::geom::Point2;
-use crate::{TaggedObjectId, core::*};
+use crate::slint_gen;
 
-pub trait SlintData<V: Variant<S>, S: SumObject>: 'static + Clone {
-    fn from_id_and_value(id: <V as Variant<S>>::Id, value: &<V as Variant<S>>::Val) -> Self;
-}
-
-impl From<TaggedObjectId> for ObjectId {
-    fn from(value: TaggedObjectId) -> Self {
+impl From<slint_gen::TaggedObjectId> for ObjectId {
+    fn from(value: slint_gen::TaggedObjectId) -> Self {
         match value.kind {
-            crate::ObjectKind::PointDistAngle
-            | crate::ObjectKind::PointFree
-            | crate::ObjectKind::PointOnLine
-            | crate::ObjectKind::PointOnCurve => PointId::from(value.raw as usize).into(),
-            crate::ObjectKind::Line => LineId::from(value.raw as usize).into(),
-            crate::ObjectKind::Curve => CurveId::from(value.raw as usize).into(),
-            crate::ObjectKind::CurveControl => CurveControlId::from(value.raw as usize).into(),
+            slint_gen::ObjectKind::PointFree => PointFreeId::from(value.raw as usize).into(),
+            slint_gen::ObjectKind::PointDistAngle => {
+                PointDistAngleId::from(value.raw as usize).into()
+            }
+            slint_gen::ObjectKind::PointOnLine => PointOnLineId::from(value.raw as usize).into(),
+            slint_gen::ObjectKind::PointOnCurve => PointOnCurveId::from(value.raw as usize).into(),
+            slint_gen::ObjectKind::Line => LineId::from(value.raw as usize).into(),
+            slint_gen::ObjectKind::Curve => CurveId::from(value.raw as usize).into(),
+            slint_gen::ObjectKind::CurveControl => CurveControlId::from(value.raw as usize).into(),
+            slint_gen::ObjectKind::LengthVariable => {
+                LengthVariableId::from(value.raw as usize).into()
+            }
         }
     }
 }
 
-impl From<crate::slint_generatedMainWindow::WorldPos> for Point2 {
-    fn from(value: crate::slint_generatedMainWindow::WorldPos) -> Self {
+impl From<ObjectId> for slint_gen::TaggedObjectId {
+    fn from(value: ObjectId) -> Self {
+        match value {
+            ObjectId::PointFree(i) => slint_gen::TaggedObjectId {
+                kind: slint_gen::ObjectKind::PointFree,
+                raw: i.0 as i32,
+            },
+            ObjectId::PointDistAngle(i) => slint_gen::TaggedObjectId {
+                kind: slint_gen::ObjectKind::PointDistAngle,
+                raw: i.0 as i32,
+            },
+            ObjectId::PointOnLine(i) => slint_gen::TaggedObjectId {
+                kind: slint_gen::ObjectKind::PointOnLine,
+                raw: i.0 as i32,
+            },
+            ObjectId::PointOnCurve(i) => slint_gen::TaggedObjectId {
+                kind: slint_gen::ObjectKind::PointOnCurve,
+                raw: i.0 as i32,
+            },
+            ObjectId::Line(i) => slint_gen::TaggedObjectId {
+                kind: slint_gen::ObjectKind::Line,
+                raw: i.0 as i32,
+            },
+            ObjectId::Curve(i) => slint_gen::TaggedObjectId {
+                kind: slint_gen::ObjectKind::Curve,
+                raw: i.0 as i32,
+            },
+            ObjectId::CurveControl(i) => slint_gen::TaggedObjectId {
+                kind: slint_gen::ObjectKind::CurveControl,
+                raw: i.0 as i32,
+            },
+            ObjectId::LengthVariable(i) => slint_gen::TaggedObjectId {
+                kind: slint_gen::ObjectKind::LengthVariable,
+                raw: i.0 as i32,
+            },
+        }
+    }
+}
+
+impl From<slint_gen::WorldPos> for Point2 {
+    fn from(value: slint_gen::WorldPos) -> Self {
         Self {
             x: value.x as f64,
             y: value.y as f64,
@@ -29,7 +72,7 @@ impl From<crate::slint_generatedMainWindow::WorldPos> for Point2 {
     }
 }
 
-impl From<Point2> for crate::slint_generatedMainWindow::WorldPos {
+impl From<Point2> for slint_gen::WorldPos {
     fn from(value: Point2) -> Self {
         Self {
             x: value.x as f32,

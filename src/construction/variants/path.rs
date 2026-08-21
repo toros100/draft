@@ -1,5 +1,5 @@
 use crate::{
-    construction::{CurveId, EvalError, Object, ObjectId, PointId, PointObj, Value},
+    construction::{CurveId, EvalError, Object, ObjectId, PointFree, PointFreeId, Value},
     core::*,
     geom::{CubicBezier, Point2},
 };
@@ -13,15 +13,9 @@ impl From<usize> for PathId {
     }
 }
 
-impl From<PathId> for ObjectId {
-    fn from(value: PathId) -> Self {
-        Self::Path(value)
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub enum PathSegment {
-    Point(PointId),
+    Point(PointFreeId),
     Curve(CurveId), // TODO: allow reversing curves
 }
 
@@ -29,12 +23,6 @@ pub enum PathSegment {
 pub struct PathObj {
     // need curves too eventually
     pub parts: Vec<PathSegment>,
-}
-
-impl From<PathObj> for Object {
-    fn from(value: PathObj) -> Self {
-        Self::Path(value)
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -46,12 +34,6 @@ pub enum PathSementVal {
 #[derive(Debug, Default, Clone)]
 pub struct PathVal {
     pub points: Vec<PathSementVal>,
-}
-
-impl From<PathVal> for Value {
-    fn from(value: PathVal) -> Self {
-        Self::Path(value)
-    }
 }
 
 impl Case<ObjectId> for PathId {
@@ -100,21 +82,21 @@ impl Case<Value> for PathVal {
     }
 }
 
-impl Variant<Object> for PathObj {
+impl VariantOld<Object> for PathObj {
     type Id = PathId;
     type Val = PathVal;
     type EvalError = EvalError;
-    fn eval(
+    fn eval_old(
         &self,
         dst: &mut Self::Val,
-        ctx: &impl crate::core::EvalCtx<Object>,
+        ctx: &impl crate::core::EvalCtxOld<Object>,
     ) -> Result<(), Self::EvalError> {
         dst.points.clear();
 
         for p in self.parts.iter() {
             match p {
                 PathSegment::Point(p) => dst.points.push(PathSementVal::Point(
-                    ctx.get_cached_as::<PointObj>(*p).unwrap().pos,
+                    ctx.get_cached_as::<PointFree>(*p).unwrap().pos,
                 )),
                 _ => unimplemented!(),
             }
@@ -127,7 +109,7 @@ impl Variant<Object> for PathObj {
 
         Ok(())
     }
-    fn dependencies(&self, dst: &mut impl Extend<<Object as crate::core::SumObject>::Id>) {
+    fn dependencies_old(&self, dst: &mut impl Extend<<Object as crate::core::SumObject>::Id>) {
         dst.extend(self.parts.iter().map(|p| match p {
             PathSegment::Point(p) => (*p).into(),
             PathSegment::Curve(c) => (*c).into(),

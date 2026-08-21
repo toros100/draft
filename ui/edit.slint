@@ -1,0 +1,135 @@
+import { LineEdit, Button, CheckBox } from "std-widgets.slint";
+import { ObjectData, TaggedObjectId, Fmt, ObjectKind } from "interop.slint";
+
+component FormField {
+    in property <string> label;
+    in-out property <string> content;
+    public function reset() {
+        line.text = content;
+        line.clear-focus();
+    }
+    public function get() -> string {
+        line.text
+    }
+    forward-focus: line;
+    HorizontalLayout {
+        spacing: 16px;
+        Text {
+            width: 80px;
+            text: label;
+            vertical-alignment: center;
+            horizontal-alignment: right;
+        }
+
+        FocusScope {
+            KeyBinding {
+                keys: @keys(Escape);
+                activated => { line.clear-focus() }
+            }
+
+            line := LineEdit {
+                width: 100%;
+                text: content;
+            }
+        }
+    }
+}
+
+component EditPointDistAngle {
+    callback submit(data: ObjectData);
+    in property <ObjectData> data;
+    property <ObjectData> data_copy: data;
+
+    foc := FocusScope {
+
+        VerticalLayout {
+            spacing: 8px;
+
+            cross-axis-alignment: end;
+
+            Rectangle {
+                height: 4px;
+            }
+
+            dist_field := FormField {
+                label: "Distance:";
+                content: data.str_1;
+            }
+
+            ang_field := FormField {
+                label: "Angle:";
+                content: data.str_2;
+            }
+
+            Rectangle {
+                height: 8px;
+            }
+
+            HorizontalLayout {
+                VerticalLayout {
+                    spacing: 8px;
+
+                    lock_dist := CheckBox {
+                        checked: data.bool-1;
+                        text: "Distance locked";
+                    }
+
+                    lock_angle := CheckBox {
+                        checked: data.bool-2;
+                        text: "Angle locked";
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 8px;
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: end;
+                Button {
+                    text: "Reset";
+                    clicked => {
+                        dist_field.reset();
+                        ang_field.reset();
+                    }
+                }
+
+                Button {
+                    text: "Accept";
+                    clicked => {
+                        root.data_copy.str-1 = dist_field.get();
+                        root.data_copy.str-2 = ang_field.get();
+                        root.data_copy.bool-1 = lock_dist.checked;
+                        root.data_copy.bool-2 = lock_angle.checked;
+                        root.submit(root.data_copy);
+                        dist_field.clear-focus();
+                        ang_field.clear-focus();
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component EditObject inherits VerticalLayout {
+    callback submit(id: TaggedObjectId, data: ObjectData);
+    in property <TaggedObjectId> id;
+    in property <ObjectData> data;
+    property <ObjectData> data_copy: data;
+
+    Text {
+        text: "\{root.id.raw}: \{Fmt.fmt_object_kind(root.id.kind)}";
+        font-size: 14pt;
+        font-weight: FontWeight.semi-bold;
+        horizontal-alignment: left;
+    }
+
+    if (id.kind == ObjectKind.PointDistAngle): EditPointDistAngle {
+        data: root.data;
+        submit(data) => {
+            root.submit(root.id, data)
+        }
+    }
+}

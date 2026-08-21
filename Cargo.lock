@@ -1013,6 +1013,7 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "approx-derive",
+ "derive_more",
  "slint",
  "slint-build",
  "static_assertions",

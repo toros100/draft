@@ -1,10 +1,9 @@
-use crate::construction::variants::expression;
 use draft::{
-    DataCallbacks, ToolData,
-    arena::Arena,
-    construction::{self, Object, ObjectId, PathSementVal, PointObj},
-    geom::{self},
-    tool::{self, PathPrimitive, ToolResponse},
+    construction::{ObjectArena, ObjectId},
+    expression, geom,
+    render::{Renderer, texture_dimensions},
+    slint_gen::{self, DataCallbacks, HoverInfo, ToolData},
+    tool::{self, ToolResponse},
 };
 use slint::{
     ComponentHandle,
@@ -14,20 +13,11 @@ use slint::{
 };
 use std::{
     cell::{Cell, RefCell},
+    f64::consts::{FRAC_PI_2, FRAC_PI_8},
     rc::Rc,
 };
-use vello::kurbo::{self, Affine, PathEl};
-use vello::peniko::{self, color::palette};
-use wgpu::util::TextureBlitter;
 
-// should already fail to compile elsewhere
-static_assertions::assert_type_eq_all!(slint::wgpu_29::wgpu::Device, vello::wgpu::Device);
-
-const VELLO_USAGE: wgpu::TextureUsages =
-    wgpu::TextureUsages::STORAGE_BINDING.union(wgpu::TextureUsages::TEXTURE_BINDING);
-
-const SLINT_USAGE: wgpu::TextureUsages =
-    wgpu::TextureUsages::TEXTURE_BINDING.union(wgpu::TextureUsages::RENDER_ATTACHMENT);
+use vello::kurbo::{self, Affine};
 
 #[derive(Debug)]
 struct Flags {
@@ -93,22 +83,6 @@ impl Default for View {
     }
 }
 
-fn get_hover_info(arena: &Arena<Object>, id: Option<ObjectId>) -> draft::HoverInfo {
-    let Some(id) = id else {
-        return draft::HoverInfo::default();
-    };
-
-    let Some(tid) = arena.get_tagged_id(id) else {
-        return draft::HoverInfo::default();
-    };
-
-    draft::HoverInfo {
-        id: tid,
-        is_some: true,
-        can_delete: arena.can_delete(id),
-    }
-}
-
 #[allow(unused)]
 impl View {
     fn affine(&self) -> Affine {
@@ -150,72 +124,97 @@ fn main() -> Result<(), slint::PlatformError> {
         .require_wgpu_29(slint::wgpu_29::WGPUConfiguration::Automatic(settings))
         .select()?;
 
-    let main_window = draft::MainWindow::new()?;
+    let main_window = slint_gen::MainWindow::new()?;
 
     let renderer: Rc<RefCell<Option<Renderer>>> = Rc::default();
     let view = Rc::new(Cell::new(View::default()));
     let flags = Rc::new(Flags::default());
 
-    let arena = Rc::new(RefCell::new(Arena::<Object>::default()));
+    let selected = Rc::new(Cell::new(Option::<ObjectId>::None));
+
+    let arena = Rc::new(RefCell::new(ObjectArena::default()));
 
     {
         let mut arena = arena.borrow_mut();
 
-        let p = arena.add_root(geom::point2(300., 300.));
-        arena.add_point_relative(p, expression::length(100.), expression::angle(1.5));
-        arena.evaluate_all();
+        let p = arena.add_point_free(geom::point2(200., 300.)).unwrap();
+
+        let q = arena
+            .add_point_dist_angle(p, expression::length(200.), expression::angle(0.))
+            .unwrap();
+
+        let r = arena
+            .add_point_dist_angle(p, expression::length(200.), expression::angle(FRAC_PI_2))
+            .unwrap();
+
+        let c = arena
+            .add_curve(
+                p,
+                q,
+                geom::polar(150., -FRAC_PI_2),
+                geom::polar(100., -FRAC_PI_8),
+            )
+            .unwrap();
+        arena
+            .add_point_on_line(p, r, expression::length(50.))
+            .unwrap();
+
+        arena
+            .add_point_on_curve(c, expression::length(90.))
+            .unwrap();
+
+        arena.evaluate_all().unwrap();
     }
 
+    // TODO: actual toolbar, this is just a quick hack
     let tools_model = slint::ModelRc::new(slint::VecModel::from(vec![
         ToolData {
             name: "move".into(),
         },
         ToolData {
-            name: "point dist/angle".into(),
-        },
-        ToolData {
-            name: "line".into(),
-        },
-        ToolData {
             name: "free point".into(),
+        },
+        ToolData {
+            name: "point dist/angle".into(),
         },
         ToolData {
             name: "point on line".into(),
         },
         ToolData {
-            name: "curve".into(),
-        },
-        ToolData {
             name: "point on curve".into(),
         },
         ToolData {
-            name: "none".into(),
+            name: "line".into(),
+        },
+        ToolData {
+            name: "curve".into(),
         },
     ]));
 
-    let tool = Rc::new(RefCell::new(Some(tool::default_boxed::<tool::Drag>())));
-
+    let tool = Rc::new(RefCell::new(None));
     main_window.set_tools(tools_model.clone());
-
     main_window.on_tool_choice({
         // HACK:
         let tool = tool.clone();
         let flags = flags.clone();
+        let main_window = main_window.as_weak();
 
         move |i| {
             let mut tool = tool.borrow_mut();
             match i {
-                0 => _ = tool.insert(tool::default_boxed::<tool::Drag>()),
-                1 => _ = tool.insert(tool::default_boxed::<tool::AddPointDistAngle>()),
-                2 => _ = tool.insert(tool::default_boxed::<tool::Line>()),
-                3 => _ = tool.insert(tool::default_boxed::<tool::Free>()),
-                4 => _ = tool.insert(tool::default_boxed::<tool::OnLine>()),
-                5 => _ = tool.insert(tool::default_boxed::<tool::Curve>()),
-                6 => _ = tool.insert(tool::default_boxed::<tool::OnCurve>()),
-                7 => _ = tool.take(),
-                _ => {}
+                0 => _ = tool.insert(tool::default_boxed::<tool::Move>()),
+                1 => _ = tool.insert(tool::default_boxed::<tool::AddPointFree>()),
+                2 => _ = tool.insert(tool::default_boxed::<tool::AddPointDistAngle>()),
+                3 => _ = tool.insert(tool::default_boxed::<tool::AddPointOnLine>()),
+                4 => _ = tool.insert(tool::default_boxed::<tool::AddPointOnCurve>()),
+                5 => _ = tool.insert(tool::default_boxed::<tool::AddLine>()),
+                6 => _ = tool.insert(tool::default_boxed::<tool::AddCurve>()),
+                _ => _ = tool.take(),
             }
             flags.set_tool_overlay_dirty();
+            if let Some(m) = main_window.upgrade() {
+                m.set_selected_tool(i);
+            }
         }
     });
 
@@ -227,7 +226,10 @@ fn main() -> Result<(), slint::PlatformError> {
         let main_window = main_window.as_weak();
 
         move |upd| {
-            arena.borrow_mut().apply_object_data(upd);
+            if let Err(e) = arena.borrow_mut().try_apply_update(upd) {
+                // TODO: need a way to surface error to UI
+                eprintln!("failed to apply update: {}", e)
+            };
             flags.set_arena_dirty();
             if let Some(w) = main_window.upgrade() {
                 w.window().request_redraw()
@@ -241,9 +243,14 @@ fn main() -> Result<(), slint::PlatformError> {
         let main_window = main_window.as_weak();
 
         move |id| {
-            arena.borrow_mut().delete(id.into());
+            let mut arena = arena.borrow_mut();
+            let id = id.into();
+            if arena.can_delete(id) {
+                arena
+                    .try_delete(id)
+                    .expect("surely the check would not lie");
+            }
             flags.set_arena_dirty();
-
             if let Some(m) = main_window.upgrade() {
                 m.window().request_redraw();
             }
@@ -251,6 +258,8 @@ fn main() -> Result<(), slint::PlatformError> {
     });
 
     main_window.on_pointer_event({
+        // TODO: need to come up with a more robust way of handling which thing is hovered/selected
+        let selected = selected.clone();
         let mut middle_drag_enter = None;
         let main_window = main_window.as_weak();
         let v = view.clone();
@@ -258,7 +267,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let view = view.clone();
         let flags = flags.clone();
 
-        let tool = tool.clone();
+        let tool_rc = tool.clone();
 
         move |k, b, x, y, m| {
             let Some(main_window) = main_window.upgrade() else {
@@ -266,7 +275,8 @@ fn main() -> Result<(), slint::PlatformError> {
             };
 
             let mut arena = arena.borrow_mut();
-            let mut tool = tool.borrow_mut();
+
+            let mut tool = tool_rc.borrow_mut();
 
             let screen_target = geom::point2(x as f64, y as f64);
             let world_target = view.get().affine().inverse() * kurbo::Point::from(screen_target);
@@ -290,102 +300,124 @@ fn main() -> Result<(), slint::PlatformError> {
                     v.set(v.get().with_translation(disp_world + q));
                     flags.set_view_dirty();
                 }
-                _ if middle_drag_enter.is_none() => {
-                    let t = arena.hit_scan(world_target.into(), 10.);
-                    main_window.set_hover_info(get_hover_info(&arena, t));
-                    main_window.set_world_pos(geom::Point2::from(world_target).into());
-                }
                 _ => {}
             }
 
-            if !main_window.get_panning()
-                && tool.is_none()
-                && k == PointerEventKind::Down
-                && b == PointerEventButton::Left
-            {
-                let hit = arena.hit_scan(world_target.into(), 10.);
-                let info = get_hover_info(&arena, hit);
-                main_window.set_selected_info(info);
+            if !main_window.get_panning() {
+                let hit = arena.hit_scan(world_target, 10.);
 
-                if let Some(hit) = hit {
-                    let data = arena.get_object_data(hit);
-                    main_window.set_selected_data(data);
-                } else {
-                    main_window.set_selected_data(draft::ObjectDataResponse::default());
-                }
-            }
+                let can_interact = tool.as_ref().is_some_and(|t| t.can_interact(hit));
 
-            // not updating tool state when panning
-            if !main_window.get_panning()
-                && let Some(tool) = tool.as_mut()
-            {
-                let tool_state = match k {
-                    PointerEventKind::Down if b == PointerEventButton::Left => {
-                        let hit = arena.hit_scan(world_target.into(), 10.);
-                        Some(tool.submit(
-                            tool::ToolInput::Press {
-                                obj: hit,
-                                pos: world_target.into(),
-                            },
-                            m,
-                            &arena,
-                        ))
+                let info = match hit {
+                    None => HoverInfo {
+                        can_interact,
+                        ..Default::default()
+                    },
+                    Some(g) => {
+                        let id = g.id();
+                        HoverInfo {
+                            can_delete: arena.can_delete(id),
+                            can_interact,
+                            id: id.into(),
+                            is_some: true,
+                        }
                     }
-                    PointerEventKind::Down if b == PointerEventButton::Right => {
-                        tool.reset();
-                        flags.set_tool_overlay_dirty();
-                        None
-                    }
-                    PointerEventKind::Up if b == PointerEventButton::Left => {
-                        let hit = arena.hit_scan(world_target.into(), 10.);
-                        Some(tool.submit(
-                            tool::ToolInput::Release {
-                                obj: hit,
-                                pos: world_target.into(),
-                            },
-                            m,
-                            &arena,
-                        ))
-                    }
-                    PointerEventKind::Move => {
-                        let hit = arena.hit_scan(world_target.into(), 10.);
-                        Some(tool.submit(
-                            tool::ToolInput::Move {
-                                obj: hit,
-                                pos: world_target.into(),
-                            },
-                            m,
-                            &arena,
-                        ))
-                    }
-                    PointerEventKind::Cancel if b == PointerEventButton::Left => {
-                        tool.reset();
-                        None
-                    }
-                    _ => None,
                 };
+                main_window.set_hover_info(info);
+                main_window.set_world_pos(geom::Point2::from(world_target).into());
 
-                if let Some(ToolResponse {
-                    action,
-                    done,
-                    overlay_changed,
-                }) = tool_state
-                {
-                    if let Some(action) = action {
-                        arena.apply_action(action);
-                        flags.set_arena_dirty();
+                if k == PointerEventKind::Down && b == PointerEventButton::Left {
+                    if let Some(hit) = hit {
+                        let resp = match arena.get_data_for(hit.id()) {
+                            Ok(data) => slint_gen::ObjectDataResponse {
+                                id: hit.id().into(),
+                                ok: true,
+                                data,
+                                ..Default::default()
+                            },
+
+                            Err(e) => slint_gen::ObjectDataResponse {
+                                id: hit.id().into(),
+                                err: e.to_string().into(),
+                                ok: true,
+                                ..Default::default()
+                            },
+                        };
+                        selected.set(Some(hit.id()));
+                        main_window.set_selected_data(resp);
+                    } else {
+                        selected.set(None);
+                        main_window.set_selected_data(slint_gen::ObjectDataResponse::default());
                     }
+                }
 
-                    if done {
-                        tool.reset();
-                    }
+                if let Some(tool) = tool.as_mut() {
+                    let tool_state = match k {
+                        PointerEventKind::Down if b == PointerEventButton::Left => {
+                            Some(tool.submit(
+                                tool::ToolInput {
+                                    cursor: world_target.into(),
+                                    modifiers: m,
+                                    mouse: tool::Mouse::Press,
+                                    hover: hit,
+                                },
+                                &arena,
+                            ))
+                        }
+                        PointerEventKind::Down if b == PointerEventButton::Right => {
+                            tool.reset();
+                            flags.set_tool_overlay_dirty();
+                            None
+                        }
+                        PointerEventKind::Up if b == PointerEventButton::Left => Some(tool.submit(
+                            tool::ToolInput {
+                                cursor: world_target.into(),
+                                modifiers: m,
+                                mouse: tool::Mouse::Release,
+                                hover: hit,
+                            },
+                            &arena,
+                        )),
+                        PointerEventKind::Move => Some(tool.submit(
+                            tool::ToolInput {
+                                cursor: world_target.into(),
+                                modifiers: m,
+                                mouse: tool::Mouse::Move,
+                                hover: hit,
+                            },
+                            &arena,
+                        )),
+                        PointerEventKind::Cancel if b == PointerEventButton::Left => {
+                            tool.reset();
+                            None
+                        }
+                        _ => None,
+                    };
 
-                    if done || overlay_changed {
-                        flags.set_tool_overlay_dirty();
+                    if let Some(ToolResponse {
+                        action,
+                        done,
+                        overlay_changed,
+                    }) = tool_state
+                    {
+                        if let Some(action) = action {
+                            // TODO:
+                            if let Err(e) = arena.apply_action(action) {
+                                eprintln!("failed to apply action: {e:?}");
+                            };
+                            flags.set_arena_dirty();
+                        }
+
+                        if done {
+                            tool.reset();
+                        }
+
+                        if done || overlay_changed {
+                            flags.set_tool_overlay_dirty();
+                        }
                     }
                 }
             }
-
             if flags.needs_redraw() {
                 main_window.window().request_redraw();
             }
@@ -400,6 +432,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let view = view.clone();
         let tool = tool.clone();
         let flags = flags.clone();
+        let selected = selected.clone();
 
         move || {
             if let (Some(main_window), Some(renderer)) =
@@ -409,7 +442,7 @@ fn main() -> Result<(), slint::PlatformError> {
                     let w = main_window.get_canvas_width();
                     let h = main_window.get_canvas_height();
                     let s = main_window.window().scale_factor();
-                    texture_dimensions(w, h, s)
+                    draft::render::texture_dimensions(w, h, s)
                 };
 
                 if (w, h) != dims {
@@ -428,10 +461,35 @@ fn main() -> Result<(), slint::PlatformError> {
                     renderer.build_tool_scene(overlay);
                 }
 
+                let mut arena = arena.borrow_mut();
+
                 if flags.arena_dirty() {
-                    // how smart is it to do this in this callback? probably not that smart?
-                    arena.borrow_mut().evaluate_all();
-                    renderer.build_main_scene(&arena.borrow());
+                    if let Err(e) = arena.evaluate_all() {
+                        // right now, this should never actually error. but in the future,
+                        // when i properly implement formulas, it could error in ways that
+                        // not be prevented by static analysis of the formula itself
+                        // (e.g. dividing by zero)
+                        // will be especially problematic with my magic move tool
+                        eprintln!("failed to evaluate: {e}")
+                    };
+                    if let Some(id) = selected.get() {
+                        match arena.get_data_for(id) {
+                            Ok(data) => {
+                                main_window.set_selected_data(slint_gen::ObjectDataResponse {
+                                    data,
+                                    id: id.into(),
+                                    ok: true,
+                                    ..Default::default()
+                                });
+                            }
+                            Err(e) => {
+                                if !matches!(e, draft::construction::ArenaError::Unimplemented) {
+                                    eprintln!("failed to get data for {id:?}: {e}")
+                                }
+                            }
+                        }
+                    }
+                    renderer.build_main_scene(arena.iter_evaluated());
                 }
 
                 if flags.needs_redraw() {
@@ -466,7 +524,7 @@ fn main() -> Result<(), slint::PlatformError> {
                     let (w, h) = texture_dimensions(w, h, s);
 
                     // TODO: use scale factor in renderer
-                    let r = Renderer::new(device.clone(), queue.clone(), w, h);
+                    let r = Renderer::new(device.clone(), queue.clone(), w, h).unwrap();
                     _ = renderer.borrow_mut().insert(r);
                 }
                 slint::RenderingState::BeforeRendering => {
@@ -483,353 +541,4 @@ fn main() -> Result<(), slint::PlatformError> {
         .unwrap();
 
     main_window.run()
-}
-
-struct Renderer {
-    tex_dims: (u32, u32),
-
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    vello_renderer: vello::Renderer,
-    blitter: wgpu::util::TextureBlitter,
-
-    tool_scene: vello::Scene,
-    main_scene: vello::Scene,
-    combined_scene: vello::Scene,
-
-    vello_tex: wgpu::Texture,
-    vello_view: wgpu::TextureView,
-
-    slint_tex: wgpu::Texture,
-    slint_view: wgpu::TextureView,
-}
-
-impl Renderer {
-    fn new(
-        device: wgpu::Device,
-        queue: wgpu::Queue,
-        texture_width: u32,
-        texture_height: u32,
-    ) -> Self {
-        let v = vello::Renderer::new(
-            &device,
-            vello::RendererOptions {
-                antialiasing_support: vello::AaSupport::area_only(),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-        let tex_dims = (texture_width, texture_height);
-
-        let blitter = TextureBlitter::new(&device, wgpu::TextureFormat::Rgba8Unorm);
-
-        let vello_tex = make_texture(&device, "vello_target", VELLO_USAGE, tex_dims.0, tex_dims.1);
-
-        let vello_view = vello_tex.create_view(&wgpu::TextureViewDescriptor::default());
-
-        let slint_tex = make_texture(&device, "slint_target", SLINT_USAGE, tex_dims.0, tex_dims.1);
-
-        let slint_view = slint_tex.create_view(&wgpu::TextureViewDescriptor::default());
-
-        Self {
-            tex_dims,
-            device,
-            queue,
-            vello_renderer: v,
-            blitter,
-            main_scene: vello::Scene::new(),
-            combined_scene: vello::Scene::new(),
-            tool_scene: vello::Scene::new(),
-            vello_tex,
-            vello_view,
-            slint_tex,
-            slint_view,
-        }
-    }
-
-    fn render(
-        &mut self,
-        transform: kurbo::Affine,
-        texture_width: u32,
-        texture_height: u32,
-    ) -> slint::Image {
-        // "reusing" self.content with a (possibly different) transform for pan/zoom without
-        // having to actually rebuild the scene
-        self.combined_scene.reset();
-        self.combined_scene
-            .append(&self.main_scene, Some(transform));
-        self.combined_scene
-            .append(&self.tool_scene, Some(transform));
-
-        let tex_dims = (texture_width, texture_height);
-
-        if tex_dims != self.tex_dims {
-            // re-allocating a texture for the new size
-            // if the window size is changed and the old texture of the wrong size is reused, the
-            // image element in slint will scale its contents and appear blurry (not cool)
-
-            // this does allocate a texture on each "tick" of a window resizing, should be fine on
-            // any hardware from this century though i guess
-            // (if this was an issue, we should debounce to limit how often this can happen and just
-            // deal with the blurriness during active resizing, but we would have to make sure that
-            // the texture is properly sized when the window size has settled)
-
-            let vello_tex = make_texture(
-                &self.device,
-                "vello_target",
-                VELLO_USAGE,
-                tex_dims.0,
-                tex_dims.1,
-            );
-            let vello_view = vello_tex.create_view(&wgpu::TextureViewDescriptor::default());
-
-            let slint_tex = make_texture(
-                &self.device,
-                "slint_target",
-                SLINT_USAGE,
-                tex_dims.0,
-                tex_dims.1,
-            );
-            let slint_view = slint_tex.create_view(&wgpu::TextureViewDescriptor::default());
-
-            // should be fine to destroy? probably does not matter either way
-            self.vello_tex.destroy();
-
-            self.vello_tex = vello_tex;
-            self.vello_view = vello_view;
-
-            // i don't think i can destroy slint_tex, because slint probably still references it
-            self.slint_tex = slint_tex;
-            self.slint_view = slint_view;
-
-            self.tex_dims = tex_dims;
-        }
-
-        self.vello_renderer
-            .render_to_texture(
-                &self.device,
-                &self.queue,
-                &self.combined_scene,
-                &self.vello_view,
-                &vello::RenderParams {
-                    base_color: palette::css::FLORAL_WHITE,
-                    width: tex_dims.0,
-                    height: tex_dims.1,
-                    antialiasing_method: vello::AaConfig::Area,
-                },
-            )
-            .unwrap();
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("blit"),
-            });
-
-        self.blitter.copy(
-            &self.device,
-            &mut encoder,
-            &self.vello_view,
-            &self.slint_view,
-        );
-
-        self.queue.submit(Some(encoder.finish()));
-        slint::Image::try_from(self.slint_tex.clone()).unwrap()
-    }
-
-    fn build_tool_scene(&mut self, tool_stuff: &[PathPrimitive]) {
-        self.tool_scene.reset();
-
-        for p in tool_stuff {
-            match p {
-                PathPrimitive::Point(pos) => {
-                    self.tool_scene.fill(
-                        vello::peniko::Fill::NonZero,
-                        kurbo::Affine::IDENTITY,
-                        peniko::Color::from_rgba8(190, 30, 30, 180),
-                        None,
-                        &kurbo::Circle::new(*pos, 6.),
-                    );
-                }
-                PathPrimitive::Line(p, q) => {
-                    self.tool_scene.stroke(
-                        &kurbo::Stroke::new(2.),
-                        kurbo::Affine::IDENTITY,
-                        peniko::Color::from_rgba8(190, 30, 30, 180),
-                        None,
-                        &kurbo::Line::new(*p, *q),
-                    );
-                }
-                PathPrimitive::Curve(c) => {
-                    self.tool_scene.stroke(
-                        &kurbo::Stroke::new(2.),
-                        kurbo::Affine::IDENTITY,
-                        peniko::Color::from_rgba8(190, 30, 30, 180),
-                        None,
-                        &kurbo::CubicBez::new(c.p_0, c.p_1, c.p_2, c.p_3),
-                    );
-                }
-            }
-        }
-    }
-
-    fn build_main_scene(&mut self, arena: &draft::arena::Arena<Object>) {
-        // TODO: extract magic constants
-        // consider screen scale factor
-        self.main_scene.reset();
-        for (_, o, v) in arena.iter_triples() {
-            let Some(v) = v else {
-                continue;
-            };
-            match v {
-                construction::Value::Point(p) => {
-                    self.main_scene.fill(
-                        vello::peniko::Fill::NonZero,
-                        kurbo::Affine::IDENTITY,
-                        peniko::Color::from_rgb8(30, 30, 30),
-                        None,
-                        &kurbo::Circle::new(p.pos, 6.),
-                    );
-
-                    match o {
-                        Object::Point(PointObj::DistAngle { parent, .. }) => {
-                            if let Some(parent_val) = arena.get_value_for::<PointObj>(*parent) {
-                                self.main_scene.stroke(
-                                    &kurbo::Stroke::new(1.).with_dashes(0., [6., 6.]),
-                                    kurbo::Affine::IDENTITY,
-                                    peniko::Color::from_rgba8(0, 0, 0, 200),
-                                    None,
-                                    &kurbo::Line::new(parent_val.pos, p.pos),
-                                );
-                            }
-                        }
-                        Object::Point(PointObj::OnLine { from, to, .. }) => {
-                            let Some(&from_val) = arena.get_value_for::<PointObj>(*from) else {
-                                continue;
-                            };
-                            let Some(&to_val) = arena.get_value_for::<PointObj>(*to) else {
-                                continue;
-                            };
-
-                            // (avoiding overlapping dashed lines if the point is not on the line
-                            // segment between its parent points)
-                            // TODO: very weird usage of this function, needlessly confusing
-                            let (_, t) =
-                                geom::closest_point_on_beam(from_val.pos, to_val.pos, p.pos);
-
-                            let (u, v) = if t < 0. {
-                                (p.pos, to_val.pos)
-                            } else if t > 1. {
-                                (from_val.pos, p.pos)
-                            } else {
-                                (from_val.pos, to_val.pos)
-                            };
-
-                            self.main_scene.stroke(
-                                &kurbo::Stroke::new(1.).with_dashes(0., [6., 6.]),
-                                kurbo::Affine::IDENTITY,
-                                peniko::Color::from_rgba8(0, 0, 0, 200),
-                                None,
-                                &kurbo::Line::new(u, v),
-                            );
-                        }
-                        _ => {}
-                    }
-                }
-
-                construction::Value::Line(l) => self.main_scene.stroke(
-                    &kurbo::Stroke::new(2.),
-                    kurbo::Affine::IDENTITY,
-                    peniko::Color::from_rgba8(0, 0, 0, 200),
-                    None,
-                    &kurbo::Line::new(l.from, l.to),
-                ),
-                construction::Value::Curve(c) => self.main_scene.stroke(
-                    &kurbo::Stroke::new(2.),
-                    kurbo::Affine::IDENTITY,
-                    peniko::Color::from_rgba8(0, 0, 0, 200),
-                    None,
-                    &kurbo::CubicBez::new(c.curve.p_0, c.curve.p_1, c.curve.p_2, c.curve.p_3),
-                ),
-                construction::Value::CurveControl(c) => {
-                    self.main_scene.stroke(
-                        &kurbo::Stroke::new(2.)
-                            .with_dashes(0.0, [1., 6.])
-                            .with_caps(kurbo::Cap::Round),
-                        kurbo::Affine::IDENTITY,
-                        peniko::Color::from_rgb8(100, 100, 100),
-                        None,
-                        &kurbo::Line::new(c.parent, c.pos),
-                    );
-                    self.main_scene.fill(
-                        vello::peniko::Fill::NonZero,
-                        kurbo::Affine::IDENTITY,
-                        peniko::Color::from_rgb8(220, 50, 40),
-                        None,
-                        &kurbo::Rect::from_center_size(c.pos, (12., 12.)).to_rounded_rect(2.),
-                    );
-                }
-                construction::Value::Path(p) => {
-                    let path = kurbo::BezPath::from_iter(p.points.iter().enumerate().map(
-                        |(i, e)| match e {
-                            PathSementVal::Point(p) => {
-                                if i == 0 {
-                                    PathEl::MoveTo((*p).into())
-                                } else {
-                                    PathEl::LineTo((*p).into())
-                                }
-                            }
-                            _ => panic!(),
-                        },
-                    ));
-
-                    self.main_scene.fill(
-                        vello::peniko::Fill::NonZero,
-                        kurbo::Affine::IDENTITY,
-                        peniko::Color::from_rgba8(200, 0, 0, 100),
-                        None,
-                        &path,
-                    );
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
-fn make_texture(
-    device: &wgpu::Device,
-    label: &str,
-    usage: wgpu::TextureUsages,
-    w: u32,
-    h: u32,
-) -> wgpu::Texture {
-    debug_assert_ne!(w, 0);
-    debug_assert_ne!(h, 0);
-
-    device.create_texture(&wgpu::TextureDescriptor {
-        label: Some(label),
-        size: wgpu::Extent3d {
-            width: w,
-            height: h,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
-        usage,
-        view_formats: &[],
-    })
-}
-
-fn texture_dimensions(logical_width: f32, logical_height: f32, scale_factor: f32) -> (u32, u32) {
-    let actual_w = (logical_width as f64 * scale_factor as f64)
-        .round()
-        .max(1.0) as u32;
-    let actual_h = (logical_height as f64 * scale_factor as f64)
-        .round()
-        .max(1.0) as u32;
-    (actual_w, actual_h)
 }

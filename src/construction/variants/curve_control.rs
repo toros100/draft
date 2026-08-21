@@ -1,15 +1,8 @@
-use super::*;
-use crate::core::*;
-use crate::geom::*;
+use crate::construction::{EvalError, ObjectId, PointId, Variant};
+use crate::geom::{Point2, Polar};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct CurveControlId(pub(crate) usize);
-
-impl From<CurveControlId> for ObjectId {
-    fn from(value: CurveControlId) -> Self {
-        Self::CurveControl(value)
-    }
-}
 
 impl From<usize> for CurveControlId {
     fn from(value: usize) -> Self {
@@ -18,15 +11,9 @@ impl From<usize> for CurveControlId {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct CurveControlObj {
+pub struct CurveControl {
     pub parent: PointId,
     pub off: Polar,
-}
-
-impl From<CurveControlObj> for Object {
-    fn from(value: CurveControlObj) -> Self {
-        Object::CurveControl(value)
-    }
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -35,72 +22,26 @@ pub struct CurveControlVal {
     pub parent: Point2,
 }
 
-impl From<CurveControlVal> for Value {
-    fn from(value: CurveControlVal) -> Self {
-        Self::CurveControl(value)
-    }
-}
-
-impl Variant<Object> for CurveControlObj {
-    type EvalError = EvalError;
+impl Variant for CurveControl {
     type Id = CurveControlId;
-    type Val = CurveControlVal;
-    fn dependencies(&self, dst: &mut impl Extend<<Object as SumObject>::Id>) {
-        dst.extend([self.parent.into()]);
-    }
-    fn eval(&self, dst: &mut Self::Val, ctx: &impl EvalCtx<Object>) -> Result<(), Self::EvalError> {
-        let parent = ctx
-            .get_cached_as::<PointObj>(self.parent)
-            .ok_or(EvalError::UnknownDependency)?;
+    type Value = CurveControlVal;
 
-        dst.parent = parent.pos;
-        dst.pos = parent.pos + self.off;
+    fn into_entry(self, id: Self::Id) -> crate::construction::Entry {
+        crate::construction::Entry::CurveControl(id, self, Self::Value::default())
+    }
+
+    fn eval(
+        &self,
+        dst: &mut Self::Value,
+        ctx: &crate::construction::EvalCtx,
+    ) -> Result<(), EvalError> {
+        let parent = ctx.get_point_position(self.parent)?;
+        dst.parent = parent;
+        dst.pos = parent + self.off;
 
         Ok(())
     }
-}
-
-// impl Case<ObjectId> for CurveControlId {
-//     fn project(s: &ObjectId) -> Option<&Self> {
-//         match s {
-//             ObjectId::CurveControl(inner) => Some(inner),
-//             _ => None,
-//         }
-//     }
-//     fn project_mut(s: &mut ObjectId) -> Option<&mut Self> {
-//         match s {
-//             ObjectId::CurveControl(inner) => Some(inner),
-//             _ => None,
-//         }
-//     }
-// }
-
-impl Case<Object> for CurveControlObj {
-    fn project(s: &Object) -> Option<&Self> {
-        match s {
-            Object::CurveControl(inner) => Some(inner),
-            _ => None,
-        }
-    }
-    fn project_mut(s: &mut Object) -> Option<&mut Self> {
-        match s {
-            Object::CurveControl(inner) => Some(inner),
-            _ => None,
-        }
-    }
-}
-
-impl Case<Value> for CurveControlVal {
-    fn project(s: &Value) -> Option<&Self> {
-        match s {
-            Value::CurveControl(inner) => Some(inner),
-            _ => None,
-        }
-    }
-    fn project_mut(s: &mut Value) -> Option<&mut Self> {
-        match s {
-            Value::CurveControl(inner) => Some(inner),
-            _ => None,
-        }
+    fn dependencies(&self, dst: &mut impl Extend<ObjectId>) {
+        dst.extend([self.parent.into()]);
     }
 }

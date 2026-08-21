@@ -1,4 +1,5 @@
-use super::*;
+use super::{Angle, CurveId, Expression, Length, PointId, Scalar};
+use std::ops::{Add, Mul};
 
 // idea: wrapper around expressions that contains type-level info about what type these will
 // evaluate to, with no way to construct them aside from these helper functions
@@ -11,125 +12,210 @@ use super::*;
 // maybe accumulate dependencies while building?
 
 #[derive(Debug, Clone)]
-pub struct LengthExpression(Expression);
+pub struct LengthExpression {
+    expr: Expression,
+    is_const: bool,
+}
 
 #[derive(Debug, Clone)]
-pub struct AngleExpression(Expression);
+pub struct AngleExpression {
+    expr: Expression,
+    is_const: bool,
+}
 
 #[derive(Debug, Clone)]
-pub struct ScalarExpression(Expression);
+pub struct ScalarExpression {
+    expr: Expression,
+    is_const: bool,
+}
+
+impl From<Length> for LengthExpression {
+    fn from(value: Length) -> Self {
+        LengthExpression {
+            expr: Expression::Length(value),
+            is_const: true,
+        }
+    }
+}
+impl From<Angle> for AngleExpression {
+    fn from(value: Angle) -> Self {
+        AngleExpression {
+            expr: Expression::Angle(value),
+            is_const: true,
+        }
+    }
+}
+impl From<Scalar> for ScalarExpression {
+    fn from(value: Scalar) -> Self {
+        ScalarExpression {
+            expr: Expression::Scalar(value),
+            is_const: true,
+        }
+    }
+}
 
 impl LengthExpression {
     pub fn inner(&self) -> &Expression {
-        &self.0
+        &self.expr
+    }
+    pub fn is_const(&self) -> bool {
+        self.is_const
     }
 }
 
 impl AngleExpression {
     pub fn inner(&self) -> &Expression {
-        &self.0
+        &self.expr
+    }
+    pub fn is_const(&self) -> bool {
+        self.is_const
     }
 }
 
 impl ScalarExpression {
     pub fn inner(&self) -> &Expression {
-        &self.0
+        &self.expr
+    }
+    pub fn is_const(&self) -> bool {
+        self.is_const
     }
 }
 
 impl From<LengthExpression> for Expression {
     fn from(value: LengthExpression) -> Self {
-        value.0
+        value.expr
     }
 }
 impl From<AngleExpression> for Expression {
     fn from(value: AngleExpression) -> Self {
-        value.0
+        value.expr
     }
 }
 impl From<ScalarExpression> for Expression {
     fn from(value: ScalarExpression) -> Self {
-        value.0
+        value.expr
     }
 }
 
 pub fn angle(v: f64) -> AngleExpression {
-    AngleExpression(Expression::Angle(v))
+    AngleExpression {
+        expr: Expression::Angle(super::Angle(v)),
+        is_const: true,
+    }
 }
 
 pub fn length(v: f64) -> LengthExpression {
-    LengthExpression(Expression::Length(v))
+    LengthExpression {
+        expr: Expression::Length(super::Length(v)),
+        is_const: true,
+    }
 }
 
 pub fn scalar(v: f64) -> ScalarExpression {
-    ScalarExpression(Expression::Scalar(v))
+    ScalarExpression {
+        expr: Expression::Scalar(super::Scalar(v)),
+        is_const: true,
+    }
 }
 
 pub fn dist_between(from: PointId, to: PointId) -> LengthExpression {
-    LengthExpression(Expression::Dist(from, to))
+    LengthExpression {
+        expr: Expression::Dist(from, to),
+        is_const: false,
+    }
 }
 
 pub fn line_angle(from: PointId, to: PointId) -> AngleExpression {
-    AngleExpression(Expression::LineAngle(from, to))
+    AngleExpression {
+        expr: Expression::LineAngle(from, to),
+        is_const: false,
+    }
 }
 
 pub fn curve_length(c: CurveId) -> LengthExpression {
-    LengthExpression(Expression::CurveLength(c))
+    LengthExpression {
+        expr: Expression::CurveLength(c),
+        is_const: false,
+    }
 }
 
 impl Mul<ScalarExpression> for ScalarExpression {
     type Output = ScalarExpression;
     fn mul(self, rhs: ScalarExpression) -> Self::Output {
-        ScalarExpression(Expression::Mul(self.0.into(), rhs.0.into()))
+        ScalarExpression {
+            expr: Expression::Mul(self.expr.into(), rhs.expr.into()),
+            is_const: self.is_const && rhs.is_const,
+        }
     }
 }
 
 impl Mul<ScalarExpression> for LengthExpression {
     type Output = LengthExpression;
     fn mul(self, rhs: ScalarExpression) -> Self::Output {
-        LengthExpression(Expression::Mul(self.0.into(), rhs.0.into()))
+        LengthExpression {
+            expr: Expression::Mul(self.expr.into(), rhs.expr.into()),
+            is_const: self.is_const && rhs.is_const,
+        }
     }
 }
 
 impl Mul<LengthExpression> for ScalarExpression {
     type Output = LengthExpression;
     fn mul(self, rhs: LengthExpression) -> Self::Output {
-        LengthExpression(Expression::Mul(self.0.into(), rhs.0.into()))
+        LengthExpression {
+            expr: Expression::Mul(self.expr.into(), rhs.expr.into()),
+            is_const: self.is_const && rhs.is_const,
+        }
     }
 }
 
 impl Mul<ScalarExpression> for AngleExpression {
     type Output = AngleExpression;
     fn mul(self, rhs: ScalarExpression) -> Self::Output {
-        AngleExpression(Expression::Mul(self.0.into(), rhs.0.into()))
+        AngleExpression {
+            expr: Expression::Mul(self.expr.into(), rhs.expr.into()),
+            is_const: self.is_const && rhs.is_const,
+        }
     }
 }
 
 impl Mul<AngleExpression> for ScalarExpression {
     type Output = AngleExpression;
     fn mul(self, rhs: AngleExpression) -> Self::Output {
-        AngleExpression(Expression::Mul(self.0.into(), rhs.0.into()))
+        AngleExpression {
+            expr: Expression::Mul(self.expr.into(), rhs.expr.into()),
+            is_const: self.is_const && rhs.is_const,
+        }
     }
 }
 
 impl Add<ScalarExpression> for ScalarExpression {
     type Output = ScalarExpression;
     fn add(self, rhs: ScalarExpression) -> Self::Output {
-        ScalarExpression(Expression::Add(self.0.into(), rhs.0.into()))
+        ScalarExpression {
+            expr: Expression::Add(self.expr.into(), rhs.expr.into()),
+            is_const: self.is_const && rhs.is_const,
+        }
     }
 }
 
 impl Add<LengthExpression> for LengthExpression {
     type Output = LengthExpression;
     fn add(self, rhs: LengthExpression) -> Self::Output {
-        LengthExpression(Expression::Add(self.0.into(), rhs.0.into()))
+        LengthExpression {
+            expr: Expression::Add(self.expr.into(), rhs.expr.into()),
+            is_const: self.is_const && rhs.is_const,
+        }
     }
 }
 
 impl Add<AngleExpression> for AngleExpression {
     type Output = AngleExpression;
     fn add(self, rhs: AngleExpression) -> Self::Output {
-        AngleExpression(Expression::Add(self.0.into(), rhs.0.into()))
+        AngleExpression {
+            expr: Expression::Add(self.expr.into(), rhs.expr.into()),
+            is_const: self.is_const && rhs.is_const,
+        }
     }
 }
 
