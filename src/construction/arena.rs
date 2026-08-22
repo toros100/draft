@@ -30,6 +30,21 @@ pub enum ObjectId {
     LengthVariable(LengthVariableId),
 }
 
+impl ObjectId {
+    pub fn into_raw(self) -> usize {
+        match self {
+            ObjectId::PointFree(id) => id.0,
+            ObjectId::PointDistAngle(id) => id.0,
+            ObjectId::PointOnLine(id) => id.0,
+            ObjectId::PointOnCurve(id) => id.0,
+            ObjectId::CurveControl(id) => id.0,
+            ObjectId::Curve(id) => id.0,
+            ObjectId::Line(id) => id.0,
+            ObjectId::LengthVariable(id) => id.0,
+        }
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum EvalError {
     #[error("unresolved dependency")]

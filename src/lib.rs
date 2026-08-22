@@ -9,3 +9,4 @@ pub mod render;
 pub mod slint_conv;
 pub mod slint_gen;
 pub mod tool;
+pub mod app;

@@ -1014,6 +1014,7 @@ dependencies = [
  "approx",
  "approx-derive",
  "derive_more",
+ "parley 0.11.1",
  "slint",
  "slint-build",
  "static_assertions",
@@ -1340,6 +1341,28 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "parlance",
  "read-fonts 0.39.2",
+ "roxmltree",
+ "smallvec",
+ "windows",
+ "windows-core",
+ "yeslogic-fontconfig-sys",
+]
+
+[[package]]
+name = "fontique"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6688bc1294fe7117d788937b6c53480169b29c566954af490830d4c09da9516a"
+dependencies = [
+ "hashbrown 0.17.1",
+ "linebender_resource_handle",
+ "memmap2",
+ "objc2 0.6.4",
+ "objc2-core-foundation",
+ "objc2-core-text",
+ "objc2-foundation 0.3.2",
+ "parlance",
+ "read-fonts 0.41.0",
  "roxmltree",
  "smallvec",
  "windows",
@@ -1701,6 +1724,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "harfrust"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c03d949a14aa089bbb282f7dd76a498a7f684428e4257202efc119ec010376f9"
+dependencies = [
+ "bitflags 2.13.1",
+ "bytemuck",
+ "read-fonts 0.41.0",
+ "smallvec",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1883,7 +1918,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52e63f8ea55ba21e44567ae67d2b01a4f5d09bb1fab693b1e6c79d96bef9e456"
 dependencies = [
  "derive_more",
- "fontique",
+ "fontique 0.10.0",
  "htmlparser",
  "icu_decimal",
  "icu_locale_core",
@@ -1953,7 +1988,7 @@ dependencies = [
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
  "once_cell",
- "parley",
+ "parley 0.10.0",
  "pin-project",
  "pin-weak",
  "portable-atomic",
@@ -3549,16 +3584,34 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b1cfcf399c774719fb1fa51bc6b91e86bdf003b03202a0902f1827ba6750746"
 dependencies = [
- "fontique",
- "harfrust",
+ "fontique 0.10.0",
+ "harfrust 0.8.4",
  "hashbrown 0.17.1",
  "icu_normalizer",
  "icu_properties",
  "icu_segmenter",
  "linebender_resource_handle",
  "parlance",
- "parley_data",
+ "parley_data 0.10.0",
  "skrifa 0.42.1",
+]
+
+[[package]]
+name = "parley"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22d2ff88bd3f7d68d1d9b09c7e6209f9a8e8c05088295140a2bcf2e9b17038c5"
+dependencies = [
+ "fontique 0.11.1",
+ "harfrust 0.12.0",
+ "hashbrown 0.17.1",
+ "icu_normalizer",
+ "icu_properties",
+ "icu_segmenter",
+ "linebender_resource_handle",
+ "parlance",
+ "parley_data 0.11.1",
+ "skrifa 0.44.0",
 ]
 
 [[package]]
@@ -3566,6 +3619,15 @@ name = "parley_data"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1d3755e2cc12c0625b0cd2f2773c6a37dd11d1531940c945ade4aeb78f2b145"
+dependencies = [
+ "icu_properties",
+]
+
+[[package]]
+name = "parley_data"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1567535334d6ba2d3cde19221ba9a7bd0fabb3cbd99046ddfb10ae061cfcc889"
 dependencies = [
  "icu_properties",
 ]
@@ -4501,7 +4563,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76684c11441f775b10bbc7b0e6b3016a39f17efdd659ffca112f17cfd6bdaed1"
 dependencies = [
  "derive_more",
- "fontique",
+ "fontique 0.10.0",
  "i-slint-compiler",
  "spin_on",
  "toml_edit",
@@ -5277,16 +5339,16 @@ dependencies = [
 
 [[package]]
 name = "vello"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "261359dbef879f8110ef7e1c442246c838d33d3d91cb05e0ea9288d432760c9f"
+checksum = "af76ceb17b2869be23598baef40a9c8db4de86b87c60510c3bc245559275a617"
 dependencies = [
  "bytemuck",
  "futures-intrusive",
  "log",
  "peniko",
  "png",
- "skrifa 0.42.1",
+ "skrifa 0.44.0",
  "static_assertions",
  "thiserror 2.0.19",
  "vello_encoding",
@@ -5296,22 +5358,22 @@ dependencies = [
 
 [[package]]
 name = "vello_encoding"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2346f5f0d7dccb3582fcd397b4a57b43165209f1424e0d76e85dd814db164af7"
+checksum = "1e31cd622201690d8dfe9fd8fea8d1ae59db1bfeea414856a617d1d03438418c"
 dependencies = [
  "bytemuck",
  "guillotiere",
  "peniko",
- "skrifa 0.42.1",
+ "skrifa 0.44.0",
  "smallvec",
 ]
 
 [[package]]
 name = "vello_shaders"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9dd38937516fa4b47423d9255bb5e4a65e839ec9d57c38c4af6189ce56bf46b7"
+checksum = "abf943bd2920bfd22928a9c1bad39866f7ffcc1109b6ed924ab52773e3868a83"
 dependencies = [
  "bytemuck",
  "log",

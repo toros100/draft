@@ -35,15 +35,13 @@ component HRule {
 }
 
 
-export global DataCallbacks {
-    callback submit_data(update: ObjectDataUpdate);
-}
-
-
 export component MainWindow inherits Window {
     callback pointer_event(kind: PointerEventKind, button: PointerEventButton, x: float, y: float, modifiers: KeyboardModifiers);
     callback tool_choice(idx: int);
     callback delete_object(id: TaggedObjectId);
+    callback update_object(update: ObjectDataUpdate);
+
+    callback canvas_size_changed(w: float, h: float);
 
     in-out property <TaggedObjectId> hover_id;
 
@@ -63,8 +61,7 @@ export component MainWindow inherits Window {
     in-out property <length> rcm_y;
 
     in-out property <image> canvas;
-    out property <length> canvas_width: canvas.width;
-    out property <length> canvas_height: canvas.height;
+
     in property <bool> panning;
     in property <WorldPos> world_pos;
 
@@ -73,6 +70,16 @@ export component MainWindow inherits Window {
 
     pure function fmt_float(f: float) -> float {
         (f * 100).round() / 100
+    }
+
+    function current_cursor() -> MouseCursor {
+        if panning {
+            return MouseCursor.grabbing;
+        } else if hover_info.can-interact {
+            return MouseCursor.pointer;
+        } else {
+            return MouseCursor.default;
+        }
     }
 
     function show_rcm(id: TaggedObjectId, mouse_x: length, mouse_y: length) {
@@ -153,9 +160,16 @@ export component MainWindow inherits Window {
                         width: 100%;
                         height: 100%;
 
+                        changed width => {
+                            root.canvas_size_changed(canvas.width / 1px,canvas.height / 1px)
+                        }
+                        changed height => {
+                            root.canvas_size_changed(canvas.width / 1px,canvas.height / 1px)
+                        }
+
                         source: root.canvas;
                         touch := TouchArea {
-                            mouse-cursor: root.hover_info.can-interact ? MouseCursor.pointer : MouseCursor.default;
+                            mouse-cursor: root.current_cursor();
 
                             pointer-event(event) => {
                                 root.pointer_event(event.kind, event.button, self.mouse_x / 1px, self.mouse_y / 1px, event.modifiers);
@@ -184,19 +198,10 @@ export component MainWindow inherits Window {
                         data: root.selected_data.data;
                         submit(id, data) => {
                             debug("submitting data for", id.raw);
-                            DataCallbacks.submit_data({ id: id, data: data })
+                            root.update_object({ id: id, data: data })
                         }
                     }
 
-                    // if (root.selected_data.ok && root.selected_data.id.kind == ObjectKind.PointDistAngle): EditPointDistAngle {
-                    //     point_id: root.selected_data.id;
-                    //     data: root.selected_data.data;
-                    //     submit(data) => {
-                    //         debug("submitting for", self.point_id);
-                    //         DataCallbacks.submit_data({ id: self.point_id, data: data })
-                    //     }
-                    // }
-                    //
                     if (!root.selected_data.ok): Rectangle {
                         Text {
                             text: "nothing selected";
@@ -235,4 +240,3 @@ export component MainWindow inherits Window {
         }
     }
 }
-// }

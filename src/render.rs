@@ -1,6 +1,11 @@
 use crate::construction::Entry;
 use crate::geom::{self, CubicBezier, Point2};
 use crate::wgpu;
+use parley::{FontContext, Layout, LayoutContext, StyleProperty};
+use vello::Scene;
+use vello::kurbo::Affine;
+use vello::peniko::Fill;
+use vello::peniko::color::palette::css::BLACK;
 use vello::{
     kurbo,
     peniko::{self, color::palette},
@@ -40,6 +45,62 @@ pub struct Renderer {
 
     slint_tex: wgpu::Texture,
     slint_view: wgpu::TextureView,
+
+    label_ctx: LabelCtx,
+}
+
+#[derive(Default)]
+struct LabelCtx {
+    font_ctx: FontContext,
+    layout_ctx: LayoutContext<()>,
+}
+
+impl LabelCtx {
+    fn build_label(&mut self, text: String, font_size: f32, scale: f32) -> Label {
+        let mut builder =
+            self.layout_ctx
+                .ranged_builder(&mut self.font_ctx, text.as_str(), scale, true);
+        builder.push_default(StyleProperty::FontSize(font_size));
+        let mut layout: Layout<()> = builder.build(text.as_str());
+        layout.break_all_lines(None);
+        Label { layout }
+    }
+}
+
+struct Label {
+    layout: Layout<()>,
+}
+
+impl Label {
+    fn width(&self) -> f64 {
+        self.layout.width().into()
+    }
+
+    fn height(&self) -> f64 {
+        self.layout.height().into()
+    }
+
+    fn render_to_scene(&self, sc: &mut Scene, pos: Point2) {
+        for line in self.layout.lines() {
+            for item in line.items() {
+                if let parley::PositionedLayoutItem::GlyphRun(g) = item {
+                    sc.draw_glyphs(g.run().font())
+                        .font_size(g.run().font_size())
+                        .normalized_coords(g.run().normalized_coords())
+                        .brush(BLACK)
+                        .transform(Affine::translate((pos.x, pos.y)))
+                        .draw(
+                            Fill::NonZero,
+                            g.positioned_glyphs().map(|g| vello::Glyph {
+                                id: g.id,
+                                x: g.x,
+                                y: g.y,
+                            }),
+                        );
+                }
+            }
+        }
+    }
 }
 
 impl Renderer {
@@ -82,6 +143,7 @@ impl Renderer {
             vello_view,
             slint_tex,
             slint_view,
+            label_ctx: Default::default(),
         })
     }
 
@@ -259,6 +321,24 @@ impl Renderer {
         let node_radius = 6f64;
 
         for g in geometry {
+            // HACK: testing labels, should obviously reuse them and give meaningful names (names
+            // owned by arena, because they need to be used in formulas?)
+            if let Some((_, pos)) = g.as_point_pos() {
+                let l = self
+                    .label_ctx
+                    .build_label(format!("A{}", g.id().into_raw()), 24., 1.);
+                l.render_to_scene(&mut self.main_scene, pos);
+                self.main_scene.stroke(
+                    &kurbo::Stroke::new(1.).with_dashes(0., [2., 2.]),
+                    kurbo::Affine::IDENTITY,
+                    palette::css::GRAY,
+                    None,
+                    &kurbo::Rect::from_origin_size(
+                        (pos.x - 6., pos.y),
+                        (l.width() + 12., l.height()),
+                    ),
+                );
+            }
             match g {
                 Entry::PointFree(_, _, p) => {
                     self.main_scene.fill(
