@@ -8,7 +8,7 @@ pub struct PointFreeVal {
     pub pos: Point2,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, derive_more::From)]
+#[derive(Debug, Clone, Copy, PartialEq, derive_more::From, Hash, Eq)]
 pub enum PointId {
     Free(PointFreeId),
     DistAngle(PointDistAngleId),

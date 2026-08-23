@@ -4,6 +4,8 @@ import { ObjectData, TaggedObjectId, Fmt, ObjectKind } from "interop.slint";
 component FormField {
     in property <string> label;
     in-out property <string> content;
+    in property <bool> enabled <=> line.enabled;
+    out property <bool> has_focus: fs.has-focus;
     public function reset() {
         line.text = content;
         line.clear-focus();
@@ -11,6 +13,7 @@ component FormField {
     public function get() -> string {
         line.text
     }
+
     forward-focus: line;
     HorizontalLayout {
         spacing: 16px;
@@ -21,10 +24,10 @@ component FormField {
             horizontal-alignment: right;
         }
 
-        FocusScope {
+        fs := FocusScope {
             KeyBinding {
                 keys: @keys(Escape);
-                activated => { line.clear-focus() }
+                activated => { line.clear-focus(); fs.clear-focus() }
             }
 
             line := LineEdit {
@@ -40,73 +43,72 @@ component EditPointDistAngle {
     in property <ObjectData> data;
     property <ObjectData> data_copy: data;
 
-    foc := FocusScope {
+    VerticalLayout {
+        spacing: 8px;
 
-        VerticalLayout {
-            spacing: 8px;
+        cross-axis-alignment: end;
 
-            cross-axis-alignment: end;
+        Rectangle {
+            height: 4px;
+        }
 
-            Rectangle {
-                height: 4px;
-            }
+        dist_field := FormField {
+            label: "Distance:";
+            content: data.str_1;
+            enabled: !lock_dist.checked;
+        }
 
-            dist_field := FormField {
-                label: "Distance:";
-                content: data.str_1;
-            }
+        ang_field := FormField {
+            label: "Angle:";
+            content: data.str_2;
+            enabled: !lock_angle.checked;
+        }
 
-            ang_field := FormField {
-                label: "Angle:";
-                content: data.str_2;
-            }
+        Rectangle {
+            height: 8px;
+        }
 
-            Rectangle {
-                height: 8px;
-            }
-
-            HorizontalLayout {
-                VerticalLayout {
-                    spacing: 8px;
-
-                    lock_dist := CheckBox {
-                        checked: data.bool-1;
-                        text: "Distance locked";
-                    }
-
-                    lock_angle := CheckBox {
-                        checked: data.bool-2;
-                        text: "Angle locked";
-                    }
-                }
-            }
-
-            Rectangle {
-                height: 8px;
-            }
-
-            HorizontalLayout {
+        HorizontalLayout {
+            VerticalLayout {
                 spacing: 8px;
-                alignment: end;
-                Button {
-                    text: "Reset";
-                    clicked => {
-                        dist_field.reset();
-                        ang_field.reset();
-                    }
+
+                lock_dist := CheckBox {
+                    checked: data.bool-1;
+                    text: "Distance locked";
                 }
 
-                Button {
-                    text: "Accept";
-                    clicked => {
-                        root.data_copy.str-1 = dist_field.get();
-                        root.data_copy.str-2 = ang_field.get();
-                        root.data_copy.bool-1 = lock_dist.checked;
-                        root.data_copy.bool-2 = lock_angle.checked;
-                        root.submit(root.data_copy);
-                        dist_field.clear-focus();
-                        ang_field.clear-focus();
-                    }
+                lock_angle := CheckBox {
+                    checked: data.bool-2;
+                    text: "Angle locked";
+                }
+            }
+        }
+
+        Rectangle {
+            height: 8px;
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: end;
+            Button {
+                text: "Reset";
+                clicked => {
+                    dist_field.reset();
+                    ang_field.reset();
+                }
+            }
+
+            Button {
+                text: "Accept";
+                clicked => {
+                    root.data_copy.str-1 = dist_field.get();
+                    root.data_copy.str-2 = ang_field.get();
+                    root.data_copy.bool-1 = lock_dist.checked;
+                    root.data_copy.bool-2 = lock_angle.checked;
+                    root.submit(root.data_copy);
+                    dist_field.clear-focus();
+                    ang_field.clear-focus();
                 }
             }
         }
@@ -118,7 +120,6 @@ export component EditObject inherits VerticalLayout {
     in property <TaggedObjectId> id;
     in property <ObjectData> data;
     property <ObjectData> data_copy: data;
-
     Text {
         text: "\{root.id.raw}: \{Fmt.fmt_object_kind(root.id.kind)}";
         font-size: 14pt;

@@ -552,6 +552,14 @@ impl ObjectArena {
         Ok(())
     }
 
+    pub fn iter_points(&self) -> impl Iterator<Item = (PointId, Point2)> {
+        self.iter_evaluated().filter_map(Entry::as_point_pos)
+    }
+
+    pub fn contains(&self, id: ObjectId) -> bool {
+        self.id_to_idx.contains_key(&id)
+    }
+
     pub fn iter_evaluated(&self) -> impl Iterator<Item = &Entry> {
         self.entries[..self.min_dirty_idx].iter()
     }

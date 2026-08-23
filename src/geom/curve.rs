@@ -117,13 +117,15 @@ impl CubicBezier {
         (first, second)
     }
 
-    fn bounding_rect(&self) -> Rect {
+    // pretty coarse (bounding rect including the control points, could consider a tighter bounding
+    // rect or polygon but it does not matter much right now)
+    pub fn bounding_rect(&self) -> Rect {
         let x_min = self.p_0.x.min(self.p_1.x).min(self.p_2.x).min(self.p_3.x);
         let x_max = self.p_0.x.max(self.p_1.x).max(self.p_2.x).max(self.p_3.x);
         let y_min = self.p_0.y.min(self.p_1.y).min(self.p_2.y).min(self.p_3.y);
         let y_max = self.p_0.y.max(self.p_1.y).max(self.p_2.y).max(self.p_3.y);
 
-        Rect::new(x_min, y_max, x_max - x_min, y_max - y_min)
+        Rect::new(x_min, y_min, x_max - x_min, y_max - y_min)
     }
 
     pub fn closest_to_at_approx_limit(&self, target: Point2, limit: f64) -> Option<f64> {
@@ -163,38 +165,6 @@ impl CubicBezier {
     pub fn dist_limit(&self, target: Point2, limit: f64) -> Option<f64> {
         self.closest_to_at_approx_limit(target, limit)
             .map(|t| target.dist(self.at(t)))
-    }
-}
-
-// if i used this anywhere else, it should probably be in its own module
-struct Rect {
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-}
-
-impl Rect {
-    fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
-        Self {
-            x,
-            y,
-            width,
-            height,
-        }
-    }
-
-    fn grow(self, f: f64) -> Self {
-        Self {
-            x: self.x - f,
-            y: self.y + f,
-            width: self.width + 2. * f,
-            height: self.height + 2. * f,
-        }
-    }
-
-    fn contains(&self, p: Point2) -> bool {
-        self.x <= p.x && p.x <= self.x + self.width && p.y <= self.y && self.y - self.height <= p.y
     }
 }
 

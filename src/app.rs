@@ -1,17 +1,17 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    construction::{ObjectArena, ObjectId},
+    construction::{ObjectArena, ObjectId, PointId},
     geom::{self, Point2, Vec2},
-    render::{Renderer, texture_dimensions},
+    render::{LabelCtx, PositionedLabel, Renderer, texture_dimensions},
     slint_gen::{
-        self, HoverInfo, MainWindow, ObjectDataResponse, ObjectDataUpdate, TaggedObjectId, ToolData,
+        HoverInfo, MainWindow, ObjectDataResponse, ObjectDataUpdate, TaggedObjectId, ToolData,
     },
     tool::{self, ToolResponse},
 };
 
 use slint::{
-    ComponentHandle, SetRenderingNotifierError, Weak,
+    ComponentHandle, SetRenderingNotifierError, ToSharedString, Weak,
     language::{KeyboardModifiers, PointerEventKind},
     platform::PointerEventButton,
     wgpu_29::wgpu,
@@ -26,8 +26,11 @@ pub struct App {
     tool: Option<Box<dyn tool::Tool>>,
     selected: Option<ObjectId>,
     renderer: Option<Renderer>,
+    labels: HashMap<PointId, PositionedLabel>,
+    label_ctx: LabelCtx,
     view: View,
     middle_drag_enter: Option<(Point2, Vec2)>,
+    label_drag_enter: Option<(PointId, Vec2)>,
     flags: Flags,
 }
 
@@ -67,7 +70,10 @@ impl App {
             tool: None,
             selected: None,
             middle_drag_enter: None,
+            label_drag_enter: None,
             flags: Flags::default(),
+            label_ctx: LabelCtx::default(),
+            labels: Default::default(),
         }
     }
 
@@ -213,18 +219,6 @@ impl App {
         // sure the changes produces by a possible previous pointer event are applied
         _ = self.arena.evaluate_all();
 
-        // HACK: find better way to keep selected data updated
-        if let Some(id) = self.selected
-            && let Ok(data) = self.arena.get_data_for(id)
-        {
-            main_window.set_selected_data(ObjectDataResponse {
-                id: id.into(),
-                data,
-                ok: true,
-                ..Default::default()
-            });
-        }
-
         let screen_target = geom::point2(x as f64, y as f64);
         let world_target = self.view.affine().inverse() * kurbo::Point::from(screen_target);
 
@@ -273,26 +267,9 @@ impl App {
 
             if k == PointerEventKind::Down && b == PointerEventButton::Left {
                 if let Some(hit) = hit {
-                    let resp = match self.arena.get_data_for(hit.id()) {
-                        Ok(data) => slint_gen::ObjectDataResponse {
-                            id: hit.id().into(),
-                            ok: true,
-                            data,
-                            ..Default::default()
-                        },
-
-                        Err(e) => slint_gen::ObjectDataResponse {
-                            id: hit.id().into(),
-                            err: e.to_string().into(),
-                            ok: true,
-                            ..Default::default()
-                        },
-                    };
                     self.selected = Some(hit.id());
-                    main_window.set_selected_data(resp);
                 } else {
                     self.selected = None;
-                    main_window.set_selected_data(slint_gen::ObjectDataResponse::default());
                 }
             }
 
@@ -359,8 +336,75 @@ impl App {
                         self.flags.set_tool_overlay_dirty();
                     }
                 }
+            } else {
+                // currently only interacting with labels if no tool is selected
+                // would maybe be cool to be able to interact with a point "through" the label,
+                // e.g. grab it by the label with the move tool
+                //
+                // could maybe be done by detecting whether a point is hit by label or by actual geometry
+                // and then carefully doing some offset math
+                // maybe the tool itself would not even have to know? since only points have labels,
+                // we could just translate the pointer position we present to the tool
+                match k {
+                    PointerEventKind::Down => {
+                        if let Some((id, pos)) = self.label_hit_scan(world_target.into()) {
+                            self.selected = Some(id.into());
+                            println!("selected {id:?}");
+                            let d = Point2::from(world_target) - pos;
+                            self.label_drag_enter = Some((id, d))
+                        } else if let Some(e) = self.arena.hit_scan(world_target, 6.) {
+                            self.selected = Some(e.id())
+                        } else {
+                            self.selected = None
+                        }
+                    }
+                    PointerEventKind::Move if let Some((id, d)) = self.label_drag_enter => {
+                        if let Some(pl) = self.labels.get_mut(&id) {
+                            let p = Point2::from(world_target);
+                            let label_pos = p - d;
+                            let off = label_pos - pl.parent_pos;
+                            pl.off = off;
+                            self.flags.set_labels_dirty();
+                        }
+                    }
+                    PointerEventKind::Up | PointerEventKind::Cancel => self.label_drag_enter = None,
+                    _ => {}
+                }
             }
         }
+
+        // HACK: find better way to keep selected data updated
+        if let Some(id) = self.selected {
+            match self.arena.get_data_for(id) {
+                Ok(data) => main_window.set_selected_data(ObjectDataResponse {
+                    id: id.into(),
+                    data,
+                    ok: true,
+                    ..Default::default()
+                }),
+
+                Err(e) => {
+                    main_window.set_selected_data(ObjectDataResponse {
+                        id: id.into(),
+                        err: e.to_shared_string(),
+                        ok: true,
+                        ..Default::default()
+                    });
+                }
+            }
+        } else {
+            main_window.set_selected_data(ObjectDataResponse::default());
+        }
+    }
+
+    fn label_hit_scan(&self, pos: Point2) -> Option<(PointId, Point2)> {
+        self.labels.iter().find_map(|(id, l)| {
+            if l.bounding_rect().contains(pos) {
+                Some((*id, l.pos()))
+            } else {
+                None
+            }
+        })
     }
 
     fn init_renderer(
@@ -376,8 +420,30 @@ impl App {
         Ok(())
     }
 
+    fn rebuild_labels(&mut self) {
+        for (p, pos) in self.arena.iter_points() {
+            self.labels
+                .entry(p)
+                .and_modify(|e| e.parent_pos = pos)
+                .or_insert_with(|| PositionedLabel {
+                    parent_pos: pos,
+                    off: geom::Vec2::default(),
+                    label: self.label_ctx.build_label(
+                        // HACK: testing labels, points should have meaningful names (determined
+                        // by arena, because they need to be used in formulas)
+                        format!("P{}", ObjectId::from(p).into_raw()),
+                        24.,
+                        1.,
+                    ),
+                    h_pad: 4.,
+                    v_pad: 4.,
+                });
+        }
+        self.labels.retain(|&id, _| self.arena.contains(id.into()));
+    }
+
     fn next_frame(&mut self) -> Option<slint::Image> {
-        let r = self.renderer.as_mut()?;
+        self.renderer.as_ref()?;
 
         let window = self.window.upgrade()?;
 
@@ -387,12 +453,21 @@ impl App {
 
         if self.flags.arena_dirty() {
             _ = self.arena.evaluate_all();
-            r.build_main_scene(self.arena.iter_evaluated());
+            self.renderer
+                .as_mut()?
+                .build_main_scene(self.arena.iter_evaluated());
+        }
+
+        if self.flags.arena_dirty() || self.flags.labels_dirty {
+            self.rebuild_labels();
+            self.renderer
+                .as_mut()?
+                .build_labels_scene(self.labels.values());
         }
 
         if self.flags.tool_overlay_dirty() {
             let ov = self.tool.as_ref().map_or([].as_slice(), |t| t.overlay());
-            r.build_tool_scene(ov);
+            self.renderer.as_mut()?.build_tool_scene(ov);
         }
 
         let (w, h) = texture_dimensions(
@@ -402,7 +477,7 @@ impl App {
         );
 
         self.flags.clear();
-        Some(r.render(self.view.affine(), w, h))
+        Some(self.renderer.as_mut()?.render(self.view.affine(), w, h))
     }
 
     fn handle_flags(&mut self) {
@@ -422,6 +497,7 @@ struct Flags {
     arena_dirty: bool,
     tool_overlay_dirty: bool,
     dims_dirty: bool,
+    labels_dirty: bool,
 }
 
 impl Default for Flags {
@@ -431,6 +507,7 @@ impl Default for Flags {
             arena_dirty: true,
             tool_overlay_dirty: true,
             dims_dirty: true,
+            labels_dirty: true,
         }
     }
 }
@@ -442,6 +519,10 @@ impl Flags {
 
     fn set_arena_dirty(&mut self) {
         self.arena_dirty = true
+    }
+
+    fn set_labels_dirty(&mut self) {
+        self.labels_dirty = true
     }
 
     fn set_tool_overlay_dirty(&mut self) {
@@ -461,7 +542,11 @@ impl Flags {
     }
 
     fn needs_redraw(&self) -> bool {
-        self.view_dirty || self.arena_dirty || self.tool_overlay_dirty || self.dims_dirty
+        self.view_dirty
+            || self.arena_dirty
+            || self.tool_overlay_dirty
+            || self.dims_dirty
+            || self.labels_dirty
     }
 
     fn clear(&mut self) {
@@ -469,6 +554,7 @@ impl Flags {
         self.arena_dirty = false;
         self.tool_overlay_dirty = false;
         self.dims_dirty = false;
+        self.labels_dirty = false;
     }
 }
 

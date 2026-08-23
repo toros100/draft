@@ -1,5 +1,5 @@
 use crate::construction::Entry;
-use crate::geom::{self, CubicBezier, Point2};
+use crate::geom::{self, CubicBezier, Point2, Rect, Vec2};
 use crate::wgpu;
 use parley::{FontContext, Layout, LayoutContext, StyleProperty};
 use vello::Scene;
@@ -38,6 +38,7 @@ pub struct Renderer {
 
     tool_scene: vello::Scene,
     main_scene: vello::Scene,
+    labels_scene: vello::Scene,
     combined_scene: vello::Scene,
 
     vello_tex: wgpu::Texture,
@@ -45,46 +46,69 @@ pub struct Renderer {
 
     slint_tex: wgpu::Texture,
     slint_view: wgpu::TextureView,
-
-    label_ctx: LabelCtx,
 }
 
 #[derive(Default)]
-struct LabelCtx {
+pub struct LabelCtx {
     font_ctx: FontContext,
     layout_ctx: LayoutContext<()>,
 }
 
 impl LabelCtx {
-    fn build_label(&mut self, text: String, font_size: f32, scale: f32) -> Label {
+    pub fn build_label(&mut self, text: String, font_size: f32, scale: f32) -> Label {
         let mut builder =
             self.layout_ctx
                 .ranged_builder(&mut self.font_ctx, text.as_str(), scale, true);
         builder.push_default(StyleProperty::FontSize(font_size));
+        builder.push_default(StyleProperty::LineHeight(
+            parley::LineHeight::FontSizeRelative(1.),
+        ));
         let mut layout: Layout<()> = builder.build(text.as_str());
         layout.break_all_lines(None);
-        Label { layout }
+        Label { layout, text }
     }
 }
 
-struct Label {
+pub struct Label {
     layout: Layout<()>,
+    text: String,
 }
 
 impl Label {
-    fn width(&self) -> f64 {
-        self.layout.width().into()
+    pub fn width(&self) -> f64 {
+        f64::from(self.layout.width())
     }
 
-    fn height(&self) -> f64 {
-        self.layout.height().into()
+    pub fn height(&self) -> f64 {
+        f64::from(self.layout.height())
     }
 
-    fn render_to_scene(&self, sc: &mut Scene, pos: Point2) {
-        for line in self.layout.lines() {
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+}
+
+pub struct PositionedLabel {
+    pub label: Label,
+    pub parent_pos: Point2,
+    pub off: Vec2,
+    pub h_pad: f64,
+    pub v_pad: f64,
+}
+
+impl PositionedLabel {
+    pub fn center(&self) -> Point2 {
+        let p = self.parent_pos + self.off;
+        geom::point2(p.x + self.width() / 2., p.y + self.height() / 2.)
+    }
+
+    fn render_text(&self, scene: &mut Scene) {
+        let pos = (self.parent_pos + self.off) + geom::vec2(self.h_pad, self.v_pad);
+        for line in self.label.layout.lines() {
             for item in line.items() {
                 if let parley::PositionedLayoutItem::GlyphRun(g) = item {
-                    sc.draw_glyphs(g.run().font())
+                    scene
+                        .draw_glyphs(g.run().font())
                         .font_size(g.run().font_size())
                         .normalized_coords(g.run().normalized_coords())
                         .brush(BLACK)
@@ -99,6 +123,44 @@ impl Label {
                         );
                 }
             }
+        }
+    }
+
+    pub fn text(&self) -> &str {
+        self.label.text()
+    }
+
+    pub fn pos(&self) -> Point2 {
+        self.parent_pos + self.off
+    }
+
+    pub fn bounding_rect(&self) -> Rect {
+        let p = self.parent_pos + self.off;
+        let w = self.width();
+        let h = self.height();
+        Rect::new(p.x, p.y, w, h)
+    }
+
+    fn height(&self) -> f64 {
+        self.label.height() + 2. * self.v_pad
+    }
+
+    fn width(&self) -> f64 {
+        self.label.width() + 2. * self.h_pad
+    }
+
+    fn connecting_line(&self) -> Option<(Point2, Point2)> {
+        if self.bounding_rect().contains(self.parent_pos) {
+            None
+        } else {
+            let d = self.parent_pos - self.center();
+
+            let half_width = self.width() / 2.;
+            let half_height = self.height() / 2.;
+
+            let s = (d.x.abs() / half_width).max(d.y.abs() / half_height);
+
+            Some((self.parent_pos, self.center() + d * (1. / s)))
         }
     }
 }
@@ -139,11 +201,11 @@ impl Renderer {
             main_scene: vello::Scene::new(),
             combined_scene: vello::Scene::new(),
             tool_scene: vello::Scene::new(),
+            labels_scene: vello::Scene::new(),
             vello_tex,
             vello_view,
             slint_tex,
             slint_view,
-            label_ctx: Default::default(),
         })
     }
 
@@ -160,6 +222,8 @@ impl Renderer {
             .append(&self.main_scene, Some(transform));
         self.combined_scene
             .append(&self.tool_scene, Some(transform));
+        self.combined_scene
+            .append(&self.labels_scene, Some(transform));
 
         let tex_dims = (texture_width, texture_height);
 
@@ -237,6 +301,36 @@ impl Renderer {
         slint::Image::try_from(self.slint_tex.clone()).unwrap()
     }
 
+    pub fn build_labels_scene<'a>(&mut self, labels: impl Iterator<Item = &'a PositionedLabel>) {
+        self.labels_scene.reset();
+        for l in labels {
+            l.render_text(&mut self.labels_scene);
+
+            // let pos = l.parent_pos + l.off;
+            // l.label.render_to_scene(&mut self.labels_scene, pos);
+
+            let r = l.bounding_rect();
+
+            if let Some((p, q)) = l.connecting_line() {
+                self.labels_scene.stroke(
+                    &kurbo::Stroke::new(1.),
+                    kurbo::Affine::IDENTITY,
+                    peniko::Color::from_rgba8(0, 0, 0, 200),
+                    None,
+                    &kurbo::Line::new(p, q),
+                );
+            }
+
+            self.labels_scene.stroke(
+                &kurbo::Stroke::new(1.).with_dashes(0., [2., 2.]),
+                kurbo::Affine::IDENTITY,
+                peniko::Color::from_rgba8(0, 0, 0, 200),
+                None,
+                &kurbo::Rect::from_origin_size(r.pos(), r.size()),
+            );
+        }
+    }
+
     pub fn build_tool_scene(&mut self, tool_stuff: &[PathPrimitive]) {
         self.tool_scene.reset();
 
@@ -312,7 +406,7 @@ impl Renderer {
     }
 
     pub fn build_main_scene<'a>(&mut self, geometry: impl Iterator<Item = &'a Entry>) {
-        // TODO: extract magic constants
+        // TODO: extract some kind of style struct
         // consider screen scale factor
         self.main_scene.reset();
 
@@ -321,24 +415,6 @@ impl Renderer {
         let node_radius = 6f64;
 
         for g in geometry {
-            // HACK: testing labels, should obviously reuse them and give meaningful names (names
-            // owned by arena, because they need to be used in formulas?)
-            if let Some((_, pos)) = g.as_point_pos() {
-                let l = self
-                    .label_ctx
-                    .build_label(format!("A{}", g.id().into_raw()), 24., 1.);
-                l.render_to_scene(&mut self.main_scene, pos);
-                self.main_scene.stroke(
-                    &kurbo::Stroke::new(1.).with_dashes(0., [2., 2.]),
-                    kurbo::Affine::IDENTITY,
-                    palette::css::GRAY,
-                    None,
-                    &kurbo::Rect::from_origin_size(
-                        (pos.x - 6., pos.y),
-                        (l.width() + 12., l.height()),
-                    ),
-                );
-            }
             match g {
                 Entry::PointFree(_, _, p) => {
                     self.main_scene.fill(

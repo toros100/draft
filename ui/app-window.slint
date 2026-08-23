@@ -87,8 +87,9 @@ export component MainWindow inherits Window {
         root.rcm_y = mouse_y;
         rcm.show()
     }
-    forward-focus: foc;
 
+    // TODO: manage focus properly
+    forward-focus: foc;
     foc := FocusScope {
         KeyBinding {
             keys: @keys(Escape);
@@ -124,13 +125,6 @@ export component MainWindow inherits Window {
 
                         x: round(root.rcm_x / 1px) * 1px;
                         y: round(root.rcm_y / 1px) * 1px;
-
-                        FocusScope {
-                            KeyBinding {
-                                keys: @keys(Escape);
-                                activated => { rcm.close() }
-                            }
-                        }
 
                         PopupMenu {
                             PopupMenuButton {
